@@ -1,3 +1,4 @@
+echo "Running from $0"
 show_usage() {
     cat <<- HELP
 $EXEC_NAME - Your assistant, in your terminal.
@@ -50,7 +51,7 @@ process_arguments() {
 main() {
     if installation_required; then
         debug "Installation is required!"
-        do_install
+        do_install "$@"
     fi
 
     load_config
@@ -65,7 +66,7 @@ main() {
     update_config ".check.me" "true"
     echo "Check is : $(get_config .check.me)"
     remove_config ".check"
-    
+
     # load_history
     
 }

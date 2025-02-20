@@ -10,3 +10,32 @@ debug() {
 error() {
     echo "[ERROR] $@" >&2
 }
+
+prompt_user() {
+    local prompt="$1"
+    local default="$2"
+    shift 2  # Remove the first two arguments
+
+    if [ $# -gt 0 ]; then
+        # Display options if more than two arguments are passed
+        echo "$prompt (choose an option, default: $default):"
+        local i=1
+        for option in "$@"; do
+            echo "  [$i] $option"
+        done
+
+        # Read user input
+        read -p "Enter choice: " choice
+
+        # Validate numeric choice
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le $# ]; then
+            echo "${!choice}"
+        else
+            echo "$default"
+        fi
+    else
+        # Standard input prompt
+        read -p "$prompt (default: $default): " input
+        echo "${input:-$default}"
+    fi
+}
