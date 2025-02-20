@@ -1,0 +1,7 @@
+check_installed() {
+    echo "TODO"
+}
+
+install() {
+    echo "TODO"
+}

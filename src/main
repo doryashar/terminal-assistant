@@ -1,0 +1,47 @@
+show_usage() {
+    echo "TODO"
+}
+
+check_installed() {
+    echo "TODO"
+}
+
+process_arguments() {
+    echo "TODO"
+    if [ ${#@} -ge 1 ] ; then
+        # Process arguments.
+        case "$1" in
+        -g	  ) gzip_output=1; if [ ! -z "$2" ] ; then LogFile_cmd="$2"; fi;;
+        --gzip	  ) gzip_output=1; if [ ! -z "$2" ] ; then LogFile_cmd="$2"; fi;;
+        -h	  ) help;;
+        -help	  ) help;;
+        --help	  ) help;;
+        --stdout  ) stdout_output=1;;
+        --update  ) update "$2";;
+        -v	  ) version;;
+        -V	  ) version;;
+        --version ) version;;
+        -*	  ) help;;
+        *	  ) LogFile_cmd="$1";;
+        esac
+    fi
+}
+
+main() {
+    check_installed
+
+    process_arguments "$@"
+
+    load_config
+    validate_config
+
+    if update_required; then
+        debug "Update is needed!"
+        do_update
+    fi
+
+    # load_history
+    
+}
+
+main "$@"

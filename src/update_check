@@ -1,0 +1,82 @@
+
+show_version() {
+    echo "TODO"
+    # printf '\nBoot Info Script version: %s\nRelease date:             %s' "${VERSION}" "${RELEASE_DATE}";
+    # if [ ! -z "${LAST_GIT_COMMIT_SHORTLOG}" ] ; then
+    #     printf '\nLast git commit:          %s\nCommit date:              %s' \
+    #             "${LAST_GIT_COMMIT_SHORTLOG}" "${LAST_GIT_COMMIT_DATE}";
+    # fi
+    # printf '\n\n';
+    # exit 0;
+}
+
+update_required() {
+    VERSION=$(cat VERSION)
+    LATEST_VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.tag_name')
+
+    # Check if the API returned a valid version
+    if [ "$LATEST_VERSION" == "null" ] || [ -z "$LATEST_VERSION" ]; then
+        debug "Failed to fetch the latest version."
+        return 2
+    fi
+
+    # Compare versions
+    if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
+        debug "Newer release available: $LATEST_VERSION (Current: $CURRENT_VERSION)"
+        return 0  # Update is required
+    else
+        debug "You're up to date! ($CURRENT_VERSION)"
+        return 1  # No update required
+    fi
+}
+
+
+do_update() {
+    if [ "$AUTO_UPDATE" -eq 1 ]; then
+        runSelfUpdate $0 "$@"
+    fi
+}
+runSelfUpdate() {
+    
+  debug "Performing self-update..."
+
+  # Download new version
+  debug -n "Downloading latest version..."
+  if ! wget --quiet --output-document="$0.tmp" $UPDATE_BASE/$SELF ; then
+    debug "Failed: Error while trying to wget new version!"
+    debug "File requested: $UPDATE_BASE/$SELF"
+    return 1
+  fi
+  debug "Done."
+
+  # Copy over modes from old version
+  OCTAL_MODE=$(stat -c '%a' $SELF)
+  if ! chmod $OCTAL_MODE "$0.tmp" ; then
+    debug "Failed: Error while trying to set mode on $0.tmp."
+    return 1
+  fi
+
+  # Spawn update script
+  cat > updateScript.sh << EOF
+        #!/bin/bash
+        # Overwrite old file with new
+        if mv "$0.tmp" "$0"; then
+        #   echo "Done. Update complete."
+        rm -f \$0
+        exec /bin/bash "$@"
+        else
+        #   echo "Failed!"
+        fi
+EOF
+
+  debug -n "Inserting update process..."
+  exec /bin/bash updateScript.sh $0 "$@"
+}
+
+# # Example usage
+# update_required
+# if [ $? -eq 0 ]; then
+#     echo "Update is needed!"
+# else
+#     echo "No update required."
+# fi

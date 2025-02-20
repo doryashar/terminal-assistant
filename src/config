@@ -1,0 +1,10 @@
+REPO="doryashar/terminal-assistant"
+AUTO_UPDATE=1
+
+load_config() {
+    echo "TODO"
+}
+
+validate_config() {
+    echo "TODO"
+}

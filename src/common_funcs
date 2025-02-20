@@ -1,0 +1,6 @@
+info()  {
+    echo "[INFO] $@"
+}
+debug() {
+    echo "[DEBUG] $@"
+}
