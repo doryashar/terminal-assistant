@@ -1,7 +1,41 @@
-check_installed() {
-    echo "TODO"
+installation_required() {
+    if [ "$0" == "$INSTALL_DIR/$EXEC_NAME" ]; then
+        return 0
+    # Check if already installed
+    elif [ -f "$INSTALL_DIR/$EXEC_NAME" ]; then
+        return 1
+    fi
+    return 0
 }
 
-install() {
-    echo "TODO"
+do_install() {
+    debug "Installing..."
+    mkdir -p "$INSTALL_DIR"
+    cp "$0" "$INSTALL_DIR/$EXEC_NAME"
+    # if failed, prompt:
+    if [ $? -ne 0 ]; then
+        debug "Failed to install in $INSTALL_DIR/$EXEC_NAME."  
+    fi
+    # Make executable
+    chmod +x "$INSTALL_DIR/$EXEC_NAME"
+
+    # if install path is not in PATH, add it
+    if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
+        export PATH=\"$INSTALL_DIR:\$PATH\"
+
+        # Get the proper rc file for the current using shell:
+        if [ -n "$ZSH_VERSION" ]; then
+            RC_FILE="$HOME/.zshrc"
+        elif [ -n "$BASH_VERSION" ]; then
+            RC_FILE="$HOME/.bashrc"
+        else
+            debug "Unsupported shell"
+            return 1
+        fi
+        debug "Adding $INSTALL_DIR to PATH in $RC_FILE"
+        echo "export PATH=\"$INSTALL_DIR:\$PATH\"; $EXEC_NAME --start" >> $RC_FILE
+    fi
+
+    info "Done installing, you might need to restart your shell to use it."
+    return 0
 }

@@ -1,45 +1,57 @@
 show_usage() {
-    echo "TODO"
+    cat <<- HELP
+$EXEC_NAME - Your assistant, in your terminal.
+    USAGE: $EXEC_NAME [OPTIONS] [REQUEST TEXT]
+
+HELP
+    exit 0
 }
 
 check_installed() {
     echo "TODO"
 }
+start_terminal_recording() {
+    echo "TODO"
+}
+stop_terminal_recording() {
+    echo "TODO"
+}
 
 process_arguments() {
-    echo "TODO"
     if [ ${#@} -ge 1 ] ; then
         # Process arguments.
         case "$1" in
-        -g	  ) gzip_output=1; if [ ! -z "$2" ] ; then LogFile_cmd="$2"; fi;;
-        --gzip	  ) gzip_output=1; if [ ! -z "$2" ] ; then LogFile_cmd="$2"; fi;;
-        -h	  ) help;;
-        -help	  ) help;;
-        --help	  ) help;;
-        --stdout  ) stdout_output=1;;
-        --update  ) update "$2";;
+        # -g	  ) gzip_output=1; if [ ! -z "$2" ] ; then LogFile_cmd="$2"; fi;;
+        # --gzip	  ) gzip_output=1; if [ ! -z "$2" ] ; then LogFile_cmd="$2"; fi;;
+        -h*	  ) show_usage;;
+        --help	  ) show_usage;;
+        --start  ) start_terminal_recording;;
+        --stop  ) stop_terminal_recording;;
+        --update  ) do_update;;
         -v	  ) version;;
         -V	  ) version;;
-        --version ) version;;
-        -*	  ) help;;
-        *	  ) LogFile_cmd="$1";;
+        --version ) show_version;;
+        -*	  ) echo "Unknown command argument"; show_usage;;
+        *	  ) LogFile_cmd="$1"; echo "LOGFILE: $LogFile_cmd";;
         esac
     fi
 }
 
 main() {
-    check_installed
-
-    process_arguments "$@"
+    if installation_required; then
+        debug "Installation is required!"
+        do_install
+    fi
 
     load_config
     validate_config
 
     if update_required; then
         debug "Update is needed!"
-        do_update
+        do_update "$@"
     fi
 
+    process_arguments "$@"
     # load_history
     
 }

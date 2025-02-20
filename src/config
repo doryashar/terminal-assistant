@@ -1,6 +1,9 @@
-VERSION="v1.0.0"
+VERSION="v1.0.1"
 REPO="doryashar/terminal-assistant"
+DEBUG=1
 AUTO_UPDATE=1
+EXEC_NAME="ai"
+INSTALL_DIR="$HOME/.local/bin"
 
 load_config() {
     echo "TODO"
