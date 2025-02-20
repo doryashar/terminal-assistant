@@ -3,5 +3,10 @@ info()  {
     echo "[INFO] $@"
 }
 debug() {
-    echo "[DEBUG] $@"
+    if [ "$DEBUG" -eq 1 ]; then
+        echo "[DEBUG] $@"
+    fi
+}
+error() {
+    echo "[ERROR] $@" >&2
 }

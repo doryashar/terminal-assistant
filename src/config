@@ -4,11 +4,98 @@ DEBUG=1
 AUTO_UPDATE=1
 EXEC_NAME="ai"
 INSTALL_DIR="$HOME/.local/bin"
+CONFIG_DIR="$HOME/.config/"
+CONFIG_FILE="${EXEC_NAME}.conf"
 
-load_config() {
-    echo "TODO"
+create_config() {
+    # Create the config file
+    cat <<EOF > "$CONFIG_DIR/$CONFIG_FILE"
+    {
+    "auto_update": true
+    }
+EOF
+    debug "Created config: $CONFIG_DIR/$CONFIG_FILE"
 }
 
-validate_config() {
-    echo "TODO"
+load_config() {
+    if [ ! -f "$CONFIG_DIR/$CONFIG_FILE" ]; then
+        info "Config file not found. Creating a new one."
+        create_config
+    fi
+    
+    # Check if the file is valid JSON
+    if ! jq empty "$CONFIG_DIR/$CONFIG_FILE" >/dev/null 2>&1; then
+        error "Invalid JSON format in $CONFIG_DIR/$CONFIG_FILE!, please fix or remove this file."
+        exit 1
+    fi
+    
+    # Load the config file
+    debug "Loaded config: $CONFIG_DIR/$CONFIG_FILE"
+}
+
+get_config() {
+    # Example Usage:
+    # REPO_NAME=$(get_config_value "repo")
+    KEY="$1"
+    # return $(jq -r '.update_check_interval' "$CONFIG_FILE")
+
+    # Read value from JSON file
+    # local VALUE=$(jq -r --arg key "$KEY" '.[$key] // empty' "$CONFIG_DIR/$CONFIG_FILE")
+    local VALUE=$(jq -r "$KEY // empty" "$CONFIG_DIR/$CONFIG_FILE")
+    
+
+    # Check if value is empty
+    if [ -z "$VALUE" ]; then
+        error "Key '$KEY' not found in $CONFIG_DIR/$CONFIG_FILE" >&2
+        return 2
+    fi
+
+    echo "$VALUE"
+}
+
+update_config() {
+    local KEY="$1"
+    local VALUE="$2"
+
+    tmpfile=$(mktemp)
+    # Modify JSON file and overwrite it
+    # jq --arg key "$KEY" --arg value "$VALUE" '.[$key] = $value' "$CONFIG_DIR/$CONFIG_FILE" > "${tmpfile}" && mv "${tmpfile}" "$CONFIG_DIR/$CONFIG_FILE"
+    # jq --argjson value "\"$VALUE\"" "$KEY = $value" "$CONFIG_DIR/$CONFIG_FILE" > "${tmpfile}" && mv "${tmpfile}" "$CONFIG_DIR/$CONFIG_FILE"
+
+    # Detect if VALUE is a number or a boolean
+    if [[ "$VALUE" =~ ^[0-9]+$ ]] || [[ "$VALUE" =~ ^true|false$ ]]; then
+        jq "$KEY = $VALUE" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+    else
+        jq --arg value "$VALUE" "$KEY = \$value" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+    fi
+    
+    # Check if the update was successful
+    if [ $? -ne 0 ]; then
+        error "Failed to update $KEY in $CONFIG_DIR/$CONFIG_FILE"
+        return 1
+    fi
+    debug "Updated $KEY to $VALUE in $CONFIG_DIR/$CONFIG_FILE"
+}
+
+remove_config() {
+    local KEY="$1"
+
+    # Temporary file for the modified JSON
+    local tmpfile=$(mktemp)
+
+    # Remove the key from the JSON file using jq
+    jq "del($KEY)" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile"
+
+    # Check if the operation was successful
+    if [ $? -ne 0 ]; then
+        error "Failed to remove $KEY from $CONFIG_DIR/$CONFIG_FILE"
+        rm -f "$tmpfile"
+        return 1
+    fi
+
+    # Replace the original config file with the modified one
+    mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+
+    debug "Removed $KEY from $CONFIG_DIR/$CONFIG_FILE"
+    return 0
 }

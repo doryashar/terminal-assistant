@@ -1,12 +1,7 @@
 show_version() {
-    echo "TODO"
-    # printf '\nBoot Info Script version: %s\nRelease date:             %s' "${VERSION}" "${RELEASE_DATE}";
-    # if [ ! -z "${LAST_GIT_COMMIT_SHORTLOG}" ] ; then
-    #     printf '\nLast git commit:          %s\nCommit date:              %s' \
-    #             "${LAST_GIT_COMMIT_SHORTLOG}" "${LAST_GIT_COMMIT_DATE}";
-    # fi
-    # printf '\n\n';
-    # exit 0;
+    RELEASE_DATE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.published_at')
+    printf '\nTerminal assistant script %s\n  Repo: %s\n  Release date: %s\n' "${VERSION}" "${REPO}" "${RELEASE_DATE}"
+    exit 0
 }
 
 update_required() {
