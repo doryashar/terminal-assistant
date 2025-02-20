@@ -1,3 +1,4 @@
+VERSION="v1.0.0"
 REPO="doryashar/terminal-assistant"
 AUTO_UPDATE=1
 

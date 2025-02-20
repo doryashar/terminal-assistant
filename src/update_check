@@ -1,4 +1,3 @@
-
 show_version() {
     echo "TODO"
     # printf '\nBoot Info Script version: %s\nRelease date:             %s' "${VERSION}" "${RELEASE_DATE}";
@@ -11,7 +10,7 @@ show_version() {
 }
 
 update_required() {
-    VERSION=$(cat VERSION)
+    # What about non-git update option?
     LATEST_VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.tag_name')
 
     # Check if the API returned a valid version
