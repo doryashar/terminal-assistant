@@ -76,9 +76,9 @@ main() {
         echo "Start Menu/Session"
     fi
 
-    update_config "check.me" "{\"hello\": \"world\"}"
-    echo "Check is : $(get_config check.me)"
-    remove_config "check"
+    # update_config "check.me" "{\"hello\": \"world\"}"
+    # echo "Check is : $(get_config check.me)"
+    # remove_config "check"
 
     send_message hello, who are you? answer in 2 sentenses please.
     # load_history
