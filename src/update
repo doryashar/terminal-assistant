@@ -27,7 +27,7 @@ update_required() {
 
 
 do_update() {
-    if [ "$(get_config .auto_update)" = "true" ]; then
+    if [ "$(get_config auto_update)" = "true" ]; then
         runSelfUpdate $0 "$@"
     else
       debug "Not updatding because Auto-update is disabled."

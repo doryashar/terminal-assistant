@@ -18,7 +18,7 @@ curl -s https://github.com/doryashar/terminal-assistant/releases/download/v1.0.1
 $ ai find all the files in the current directory that contain the word "hello" and are older than 10 days.
 ```
 ### Roadmap:
-- [ ] When installing, prompt the user for installation and config directory.
+- [X] When installing, prompt the user for installation and config directory.
 - [ ] Create config file, with default values and prompt the user for values.
 - [x] Add support for AUTOMATIC update.
 - [ ] Add support for multiple models.

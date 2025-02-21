@@ -39,3 +39,100 @@ prompt_user() {
         echo "${input:-$default}"
     fi
 }
+
+
+# =====================================
+COLUMNS=$(tput cols)  # Use tput for portability
+BOX_WIDTH=$((COLUMNS - 4))
+BOX_WIDTH_TEXT=$((BOX_WIDTH - 2))
+
+# Global variables to manage the box state
+declare -i box_open=0
+declare -a box_content # ANSI escape codes for basic styling (optional, but improves readability)
+declare -r COLOR_GREEN='\033[0;32m'
+declare -r COLOR_YELLOW='\033[0;33m'
+declare -r COLOR_BLUE='\033[0;34m'
+declare -r COLOR_RESET='\033[0m'
+
+# =====================================
+# Function to draw into the box
+in_box() {
+    if [ "$#" -eq 0 ] && [ "$box_open" -eq 1 ]; then  # close box
+        # Close the box
+        if [ $position -gt 0 ]; then
+            spaces_in_line=$(( BOX_WIDTH_TEXT - position))
+            printf "%-${spaces_in_line}s │\n" "$position"
+        fi
+        printf "${COLOR_BLUE}└%${BOX_WIDTH}s┘\n" "" | tr ' ' '─'
+        printf "${COLOR_RESET}" # Reset colors
+        box_open=0
+        return
+    fi
+
+    if [ "$box_open" -eq 0 ]; then
+        # Open the box
+        box_open=1
+        position=0
+        printf "${COLOR_BLUE}┌%${BOX_WIDTH}s┐\n" "" | tr ' ' '─'
+    fi
+    
+    if [ "$#" -gt 0 ]; then
+        local left_to_show="$*"
+        while [[ -n "$left_to_show" ]]; do
+        
+            if [ $position -eq 0 ]; then
+                printf "${COLOR_BLUE}│ "
+            fi
+            spaces_in_line=$((BOX_WIDTH_TEXT - position))
+            chunk="${left_to_show:0:spaces_in_line}"
+            
+            if [[ "$chunk" == *$'\n'* ]]; then
+                # echo "Chunk $chunk of $left_to_show"
+                # Process the part before the newline
+                chunk="${chunk%%$'\n'*}"
+                printf "%-${spaces_in_line}s │\n" "$chunk"
+                chunk_size=$(( 1 + ${#chunk}))
+                left_to_show="${left_to_show:chunk_size}"
+                position=0
+                continue
+            fi
+            chunk_size=${#chunk}
+            printf "%s" "$chunk"
+            position=$(( (position + chunk_size) % BOX_WIDTH_TEXT ))
+            left_to_show="${left_to_show:chunk_size}"
+
+            if [ $position -eq 0 ]; then
+                printf " │\n"
+            fi
+        done
+    
+        # # Collect the text into a single string.
+        # local var="$*"  
+        # local carry=""
+        # local buffer=""
+
+        # # Iterate through the string and handle wrapping manually
+        # while [[ -n "$var" ]]; do
+        #     # If there's a newline in the string, split it
+        #     if [[ "$var" == *$'\n'* ]]; then
+        #         # Process the part before the newline
+        #         chunk="${var%%$'\n'*}"
+        #         var="${var#*$'\n'}"
+        #         printf "${COLOR_BLUE}│ %-${BOX_WIDTH_TEXT}s │\n" "$chunk"
+        #     else
+        #         # Process normally when no newline is present
+        #         chunk="${var:0:$BOX_WIDTH_TEXT}"
+        #         var="${var:$BOX_WIDTH_TEXT}"
+
+        #         # If there is still remaining text, store it in the buffer
+        #         if [[ ${#chunk} -lt $BOX_WIDTH_TEXT && -n "$var" ]]; then
+        #             carry="$var"
+        #             var=""
+        #             buffer="$carry"
+        #         fi
+        #         printf "${COLOR_BLUE}│ %-${BOX_WIDTH_TEXT}s │\n" "$chunk"
+        #     fi
+        # done
+    fi
+}
+# =================================

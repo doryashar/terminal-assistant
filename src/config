@@ -20,6 +20,8 @@ create_config() {
     cat <<EOF > "$CONFIG_DIR/$CONFIG_FILE"
     {
         "auto_update": "false"
+        "system_prompt": "You are a helpful assistant.",
+        "prompt_template": {}
     }
 EOF
     # if failed, exit
@@ -53,10 +55,16 @@ get_config() {
     KEY="$1"
     # return $(jq -r '.update_check_interval' "$CONFIG_FILE")
 
+    # If the KEY is legal enviroment variable name and is set, use that:
+    if [[ "$KEY" != *.* ]] && [[ -n "${!KEY}" ]]; then
+        echo "${!KEY}"
+        return
+    fi
+
+    KEY=".$KEY"
     # Read value from JSON file
     # local VALUE=$(jq -r --arg key "$KEY" '.[$key] // empty' "$CONFIG_DIR/$CONFIG_FILE")
     local VALUE=$(jq -r "$KEY // empty" "$CONFIG_DIR/$CONFIG_FILE")
-    
 
     # Check if value is empty
     if [ -z "$VALUE" ]; then
@@ -68,7 +76,7 @@ get_config() {
 }
 
 update_config() {
-    local KEY="$1"
+    local KEY=".$1"
     local VALUE="$2"
 
     tmpfile=$(mktemp)
@@ -92,7 +100,7 @@ update_config() {
 }
 
 remove_config() {
-    local KEY="$1"
+    local KEY=".$1"
 
     # Temporary file for the modified JSON
     local tmpfile=$(mktemp)

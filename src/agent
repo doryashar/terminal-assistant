@@ -1,3 +1,72 @@
-send_message() {
-    echo "TODO"
+# send_message() {
+#     # Try to send
+#     # Wait for response
+#     # If response is not received in time, try again 3 times or exit
+#     # If response is received, return the response
+#     echo "TODO"
+# }
+#!/bin/bash
+template='{
+        "model": "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "messages": [
+            {
+                "role": "user",
+                "content": "%s"
+            }
+        ],
+        "stream": true
+    }'
+
+content=$(printf "$template" "$*")
+echo "" > error.log
+echo "" > output.txt
+
+send_content() {
+    in_box
+    curl -sS --no-buffer -X POST "https://openrouter.ai/api/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+        -d "$content" | while IFS= read -r line; do
+            # Save raw JSON to file
+            echo $line >> output.txt
+            
+            line=$(echo "$line" | sed 's/^data: //')
+
+            # Skip empty lines
+            [[ -z "$line" ]] && continue
+            [[ "$line" == ": OPENROUTER PROCESSING" ]] && continue
+            [[ "$line" == "[DONE]" ]] && break
+
+            # Append new data to buffer
+            buffer+="$(printf "%s" "$line")"
+            
+            # Check if we have a full JSON object (ends with } or [DONE])
+            if [[ "$line" == *"}" ]]; then
+                # Try parsing JSON, otherwise print an error
+                if echo "$buffer" | kf empty 2>/dev/null; then
+                    content=$(echo "$buffer" | kf -r '.choices[0].delta.content // empty')
+                    if [[ -n $content ]]; then
+                        in_box "$content"  # Print to terminal
+                    fi
+
+                    # If the response signals stop, break the loop
+                    # finish_reason=$(echo "$buffer" | kf -r '.choices[0].finish_reason // empty')
+                    # [[ "$finish_reason" == "stop" ]] && continue
+                else
+                    echo -e "[ERROR] Invalid JSON received: $buffer\n" >> error.log #>&2
+                fi
+
+                # Reset buffer after processing a full JSON object
+                buffer=""
+            fi
+        done
+    if [[ -n $buffer ]]; then
+        echo "ERROR, Buffer is $buffer"
+    fi
+
+    # $buffer # Ensure a newline at the end
+    in_box "Finished"
+    in_box
+    return
 }
+send_content "$content"
