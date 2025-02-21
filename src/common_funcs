@@ -47,8 +47,10 @@ BOX_WIDTH=$((COLUMNS - 4))
 BOX_WIDTH_TEXT=$((BOX_WIDTH - 2))
 
 # Global variables to manage the box state
-declare -i box_open=0
-declare -a box_content # ANSI escape codes for basic styling (optional, but improves readability)
+# declare -i 
+box_open=0
+position=0
+# declare -a box_content # ANSI escape codes for basic styling (optional, but improves readability)
 declare -r COLOR_GREEN='\033[0;32m'
 declare -r COLOR_YELLOW='\033[0;33m'
 declare -r COLOR_BLUE='\033[0;34m'
@@ -61,7 +63,7 @@ in_box() {
         # Close the box
         if [ $position -gt 0 ]; then
             spaces_in_line=$(( BOX_WIDTH_TEXT - position))
-            printf "%-${spaces_in_line}s │\n" "$position"
+            printf "%-${spaces_in_line}s │\n" " "
         fi
         printf "${COLOR_BLUE}└%${BOX_WIDTH}s┘\n" "" | tr ' ' '─'
         printf "${COLOR_RESET}" # Reset colors

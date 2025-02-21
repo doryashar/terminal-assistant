@@ -1,3 +1,0 @@
-[ERROR] Invalid JSON received: {"id":"gen-1740066141-VR9KIHX0NtSXHE8n0aAw","provider":"Google AI Studio","model":"google/gemini-2.0-flash-lite-preview-02-05","object":"chat.completion.chunk","created":1740066141,"choices":[{"index":0,"delta":{"role":"assistant","content":" what you create and embrace throughout your time here.
-"},"finish_reason":"stop","native_finish_reason":"STOP","logprobs":null}]}
-

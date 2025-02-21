@@ -1,35 +1,16 @@
-# send_message() {
-#     # Try to send
-#     # Wait for response
-#     # If response is not received in time, try again 3 times or exit
-#     # If response is received, return the response
-#     echo "TODO"
-# }
 #!/bin/bash
-template='{
-        "model": "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "messages": [
-            {
-                "role": "user",
-                "content": "%s"
-            }
-        ],
-        "stream": true
-    }'
 
-content=$(printf "$template" "$*")
-echo "" > error.log
-echo "" > output.txt
-
-send_content() {
+send_json_to_api() {
     in_box
-    curl -sS --no-buffer -X POST "https://openrouter.ai/api/v1/chat/completions" \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-        -d "$content" | while IFS= read -r line; do
+    content="$*"
+    model_endpoint=$(get_config models.openrouter.model_endpoint)
+    OPENROUTER_API_KEY=$(get_config models.openrouter.api_key)
+    curl -sS --no-buffer -X POST "$model_endpoint" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+    -d "$content" | while IFS= read -r line; do
             # Save raw JSON to file
-            echo $line >> output.txt
-            
+            # echo $line >> output.txt
             line=$(echo "$line" | sed 's/^data: //')
 
             # Skip empty lines
@@ -43,30 +24,44 @@ send_content() {
             # Check if we have a full JSON object (ends with } or [DONE])
             if [[ "$line" == *"}" ]]; then
                 # Try parsing JSON, otherwise print an error
-                if echo "$buffer" | kf empty 2>/dev/null; then
-                    content=$(echo "$buffer" | kf -r '.choices[0].delta.content // empty')
-                    if [[ -n $content ]]; then
+                if echo "$buffer" | jq empty 2>/dev/null; then
+                    content=$(echo "$buffer" | jq -r '.choices[0].delta.content // empty')
+                    if [[ ! $content == "" ]]; then
                         in_box "$content"  # Print to terminal
+                    else 
+                        in_box #$buffer
                     fi
-
                     # If the response signals stop, break the loop
-                    # finish_reason=$(echo "$buffer" | kf -r '.choices[0].finish_reason // empty')
+                    # finish_reason=$(echo "$buffer" | jq -r '.choices[0].finish_reason // empty')
                     # [[ "$finish_reason" == "stop" ]] && continue
                 else
-                    echo -e "[ERROR] Invalid JSON received: $buffer\n" >> error.log #>&2
+                    error "Invalid JSON received: $buffer" #>>error.log
                 fi
 
                 # Reset buffer after processing a full JSON object
                 buffer=""
+                # echo P$position,$line
             fi
         done
     if [[ -n $buffer ]]; then
-        echo "ERROR, Buffer is $buffer"
+        error "ERROR, Buffer is $buffer"
     fi
-
-    # $buffer # Ensure a newline at the end
-    in_box "Finished"
-    in_box
     return
 }
-send_content "$content"
+
+send_message() {
+    message_to_send="$*"
+    selected_model=$(get_config models.$(get_config models.active))
+    model=$(echo "$selected_model" | jq '.model')
+    stream=$(echo "$selected_model" | jq '.stream')
+    content=$(jq --argjson model "$model" '. + {model: $model}' <<< "$(get_config prompt_template)")
+    content=$(jq --argjson stream "$stream" '. + {stream: $stream}' <<< "$content")
+    content=$(printf "$content" "$message_to_send")
+    # echo "" > output.txt
+    send_json_to_api "$content"
+    # Try to send
+    # Wait for response
+    # If response is not received in time, try again 3 times or exit
+    # If response is received, return the response
+    echo "TODO"
+}
