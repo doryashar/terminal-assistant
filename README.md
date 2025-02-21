@@ -10,7 +10,7 @@ Dont use it. this is not meant for anyone. the code in this repo is not safe.
 
 ### Install & Run:
 ```bash
-curl -s https://github.com/doryashar/terminal-assistant/releases/download/v1.0.1/ai | bash
+curl -s https://github.com/doryashar/terminal-assistant/releases/download/v1.0.3/install | bash
 ```
 
 ### Usage example:

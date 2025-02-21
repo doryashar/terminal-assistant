@@ -1,0 +1,583 @@
+#!/bin/bash
+info()  {
+    echo "[INFO] $@"
+}
+debug() {
+    if [ "$DEBUG" -eq 1 ]; then
+        echo "[DEBUG] $@"
+    fi
+}
+error() {
+    echo "[ERROR] $@" >&2
+}
+
+prompt_user() {
+    local prompt="$1"
+    local default="$2"
+    shift 2  # Remove the first two arguments
+
+    if [ $# -gt 0 ]; then
+        # Display options if more than two arguments are passed
+        echo "$prompt (choose an option, default: $default):"
+        local i=1
+        for option in "$@"; do
+            echo "  [$i] $option"
+        done
+
+        # Read user input
+        read -p "Enter choice: " choice
+
+        # Validate numeric choice
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le $# ]; then
+            echo "${!choice}"
+        else
+            echo "$default"
+        fi
+    else
+        # Standard input prompt
+        read -p "$prompt (default: $default): " input
+        echo "${input:-$default}"
+    fi
+}
+
+
+# =====================================
+COLUMNS=$(tput cols)  # Use tput for portability
+BOX_WIDTH=$((COLUMNS - 4))
+BOX_WIDTH_TEXT=$((BOX_WIDTH - 2))
+
+# Global variables to manage the box state
+# declare -i 
+box_open=0
+position=0
+# declare -a box_content # ANSI escape codes for basic styling (optional, but improves readability)
+declare -r COLOR_GREEN='\033[0;32m'
+declare -r COLOR_YELLOW='\033[0;33m'
+declare -r COLOR_BLUE='\033[0;34m'
+declare -r COLOR_RESET='\033[0m'
+
+# =====================================
+# Function to draw into the box
+in_box() {
+    if [ "$#" -eq 0 ] && [ "$box_open" -eq 1 ]; then  # close box
+        # Close the box
+        if [ $position -gt 0 ]; then
+            spaces_in_line=$(( BOX_WIDTH_TEXT - position))
+            printf "%-${spaces_in_line}s │\n" " "
+        fi
+        printf "${COLOR_BLUE}└%${BOX_WIDTH}s┘\n" "" | tr ' ' '─'
+        printf "${COLOR_RESET}" # Reset colors
+        box_open=0
+        return
+    fi
+
+    if [ "$box_open" -eq 0 ]; then
+        # Open the box
+        box_open=1
+        position=0
+        printf "${COLOR_BLUE}┌%${BOX_WIDTH}s┐\n" "" | tr ' ' '─'
+    fi
+    
+    if [ "$#" -gt 0 ]; then
+        local left_to_show="$*"
+        while [[ -n "$left_to_show" ]]; do
+        
+            if [ $position -eq 0 ]; then
+                printf "${COLOR_BLUE}│ "
+            fi
+            spaces_in_line=$((BOX_WIDTH_TEXT - position))
+            chunk="${left_to_show:0:spaces_in_line}"
+            
+            if [[ "$chunk" == *$'\n'* ]]; then
+                # echo "Chunk $chunk of $left_to_show"
+                # Process the part before the newline
+                chunk="${chunk%%$'\n'*}"
+                printf "%-${spaces_in_line}s │\n" "$chunk"
+                chunk_size=$(( 1 + ${#chunk}))
+                left_to_show="${left_to_show:chunk_size}"
+                position=0
+                continue
+            fi
+            chunk_size=${#chunk}
+            printf "%s" "$chunk"
+            position=$(( (position + chunk_size) % BOX_WIDTH_TEXT ))
+            left_to_show="${left_to_show:chunk_size}"
+
+            if [ $position -eq 0 ]; then
+                printf " │\n"
+            fi
+        done
+    
+        # # Collect the text into a single string.
+        # local var="$*"  
+        # local carry=""
+        # local buffer=""
+
+        # # Iterate through the string and handle wrapping manually
+        # while [[ -n "$var" ]]; do
+        #     # If there's a newline in the string, split it
+        #     if [[ "$var" == *$'\n'* ]]; then
+        #         # Process the part before the newline
+        #         chunk="${var%%$'\n'*}"
+        #         var="${var#*$'\n'}"
+        #         printf "${COLOR_BLUE}│ %-${BOX_WIDTH_TEXT}s │\n" "$chunk"
+        #     else
+        #         # Process normally when no newline is present
+        #         chunk="${var:0:$BOX_WIDTH_TEXT}"
+        #         var="${var:$BOX_WIDTH_TEXT}"
+
+        #         # If there is still remaining text, store it in the buffer
+        #         if [[ ${#chunk} -lt $BOX_WIDTH_TEXT && -n "$var" ]]; then
+        #             carry="$var"
+        #             var=""
+        #             buffer="$carry"
+        #         fi
+        #         printf "${COLOR_BLUE}│ %-${BOX_WIDTH_TEXT}s │\n" "$chunk"
+        #     fi
+        # done
+    fi
+}
+# =================================
+VERSION="v1.0.3"
+REPO="doryashar/terminal-assistant"
+DEBUG=1
+EXEC_NAME="ai"
+INSTALL_DIR="$HOME/.local/bin"
+CONFIG_DIR="$HOME/.config/"
+CONFIG_FILE="${EXEC_NAME}.conf"
+
+create_config() {
+    # if config dir not exists, create it
+    if [ ! -d "$CONFIG_DIR" ]; then
+        mkdir -p "$CONFIG_DIR"
+        if [ $? -ne 0 ]; then
+            error "Failed to create config directory: $CONFIG_DIR"
+            exit 1
+        fi
+    fi
+
+    # Create the config file
+    cat <<EOF > "$CONFIG_DIR/$CONFIG_FILE"
+    {
+        "auto_update": "true",
+        "system_prompt": "You are a helpful assistant.",
+        "prompt_template": {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "%s"
+                }
+            ]
+        },
+        "models": {
+            "active": "openrouter",
+            "openrouter": {
+                "model": "google/gemini-2.0-flash-lite-preview-02-05:free",
+                "stream": true,
+                "api_key": "YOUR_OPENROUTER_API_KEY",
+                "model_endpoint": "https://openrouter.ai/api/v1/chat/completions"
+            }
+        }
+    }
+EOF
+    # if failed, exit
+    if [ $? -ne 0 ]; then
+        error "Failed to create config file: $CONFIG_DIR/$CONFIG_FILE"
+        exit 1
+    fi
+
+    info "Created config: $CONFIG_DIR/$CONFIG_FILE"
+}
+
+load_config() {
+    if [ ! -f "$CONFIG_DIR/$CONFIG_FILE" ]; then
+        info "Config file not found. Creating a new one."
+        create_config
+    fi
+    
+    # Check if the file is valid JSON
+    if ! jq empty "$CONFIG_DIR/$CONFIG_FILE" >/dev/null 2>&1; then
+        error "Invalid JSON format in $CONFIG_DIR/$CONFIG_FILE!, please fix or remove this file."
+        exit 1
+    fi
+    
+    # Load the config file
+    debug "Loaded config: $CONFIG_DIR/$CONFIG_FILE"
+}
+
+get_config() {
+    # Example Usage:
+    # REPO_NAME=$(get_config_value "repo")
+    KEY="$1"
+    # return $(jq -r '.update_check_interval' "$CONFIG_FILE")
+
+    # If the KEY is legal enviroment variable name and is set, use that:
+    if [[ "$KEY" != *.* ]] && [[ -n "${!KEY}" ]]; then
+        echo "${!KEY}"
+        return
+    fi
+
+    KEY=".$KEY"
+    # Read value from JSON file
+    # local VALUE=$(jq -r --arg key "$KEY" '.[$key] // empty' "$CONFIG_DIR/$CONFIG_FILE")
+    local VALUE=$(jq -r "$KEY // empty" "$CONFIG_DIR/$CONFIG_FILE")
+
+    # Check if value is empty
+    if [ -z "$VALUE" ]; then
+        error "Key '$KEY' not found in $CONFIG_DIR/$CONFIG_FILE" >&2
+        return 2
+    fi
+
+    echo "$VALUE"
+}
+
+update_config() {
+    local KEY=".$1"
+    local VALUE="$2"
+
+    tmpfile=$(mktemp)
+    # Modify JSON file and overwrite it
+    # jq --arg key "$KEY" --arg value "$VALUE" '.[$key] = $value' "$CONFIG_DIR/$CONFIG_FILE" > "${tmpfile}" && mv "${tmpfile}" "$CONFIG_DIR/$CONFIG_FILE"
+    # jq --argjson value "\"$VALUE\"" "$KEY = $value" "$CONFIG_DIR/$CONFIG_FILE" > "${tmpfile}" && mv "${tmpfile}" "$CONFIG_DIR/$CONFIG_FILE"
+
+    # Detect if VALUE is a number or a boolean
+    if [[ "$VALUE" =~ ^[0-9]+$ ]] || [[ "$VALUE" =~ ^true|false$ ]]; then
+        jq "$KEY = $VALUE" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+    else
+        jq --arg value "$VALUE" "$KEY = \$value" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+    fi
+    
+    # Check if the update was successful
+    if [ $? -ne 0 ]; then
+        error "Failed to update $KEY in $CONFIG_DIR/$CONFIG_FILE"
+        return 1
+    fi
+    debug "Updated $KEY to $VALUE in $CONFIG_DIR/$CONFIG_FILE"
+}
+
+remove_config() {
+    local KEY=".$1"
+
+    # Temporary file for the modified JSON
+    local tmpfile=$(mktemp)
+
+    # Remove the key from the JSON file using jq
+    jq "del($KEY)" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile"
+
+    # Check if the operation was successful
+    if [ $? -ne 0 ]; then
+        error "Failed to remove $KEY from $CONFIG_DIR/$CONFIG_FILE"
+        rm -f "$tmpfile"
+        return 1
+    fi
+
+    # Replace the original config file with the modified one
+    mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+
+    debug "Removed $KEY from $CONFIG_DIR/$CONFIG_FILE"
+    return 0
+}
+#!/bin/bash
+
+send_json_to_api() {
+    in_box
+    content="$*"
+    model_endpoint=$(get_config models.openrouter.model_endpoint)
+    OPENROUTER_API_KEY=$(get_config models.openrouter.api_key)
+    curl -sS --no-buffer -X POST "$model_endpoint" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+    -d "$content" | while IFS= read -r line; do
+            # Save raw JSON to file
+            # echo $line >> output.txt
+            line=$(echo "$line" | sed 's/^data: //')
+
+            # Skip empty lines
+            [[ -z "$line" ]] && continue
+            [[ "$line" == ": OPENROUTER PROCESSING" ]] && continue
+            [[ "$line" == "[DONE]" ]] && break
+
+            # Append new data to buffer
+            buffer+="$(printf "%s" "$line")"
+            
+            # Check if we have a full JSON object (ends with } or [DONE])
+            if [[ "$line" == *"}" ]]; then
+                # Try parsing JSON, otherwise print an error
+                if echo "$buffer" | jq empty 2>/dev/null; then
+                    content=$(echo "$buffer" | jq -r '.choices[0].delta.content // empty')
+                    if [[ ! $content == "" ]]; then
+                        in_box "$content"  # Print to terminal
+                    else 
+                        in_box #$buffer
+                    fi
+                    # If the response signals stop, break the loop
+                    # finish_reason=$(echo "$buffer" | jq -r '.choices[0].finish_reason // empty')
+                    # [[ "$finish_reason" == "stop" ]] && continue
+                else
+                    error "Invalid JSON received: $buffer" #>>error.log
+                fi
+
+                # Reset buffer after processing a full JSON object
+                buffer=""
+                # echo P$position,$line
+            fi
+        done
+    if [[ -n $buffer ]]; then
+        error "ERROR, Buffer is $buffer"
+    fi
+    return
+}
+
+send_message() {
+    message_to_send="$*"
+    selected_model=$(get_config models.$(get_config models.active))
+    model=$(echo "$selected_model" | jq '.model')
+    stream=$(echo "$selected_model" | jq '.stream')
+    content=$(jq --argjson model "$model" '. + {model: $model}' <<< "$(get_config prompt_template)")
+    content=$(jq --argjson stream "$stream" '. + {stream: $stream}' <<< "$content")
+    content=$(printf "$content" "$message_to_send")
+    # echo "" > output.txt
+    send_json_to_api "$content"
+    # Try to send
+    # Wait for response
+    # If response is not received in time, try again 3 times or exit
+    # If response is received, return the response
+    echo "TODO"
+}
+
+installation_required() {
+    if [ "$0" == "$INSTALL_DIR/$EXEC_NAME" ]; then
+        return 1
+    # Check if already installed
+    elif [ -f "$INSTALL_DIR/$EXEC_NAME" ]; then
+        return 1
+    fi
+    return 0
+}
+
+do_install() {
+    debug "Installing..."
+
+    # Prompt user for required information
+    INSTALL_DIR=$(prompt_user "Enter installation directory" "$INSTALL_DIR") 
+    INSTALL_DIR="${INSTALL_DIR/#\~/$HOME}"  # Expand ~ manually   
+    INSTALL_DIR=$(realpath -m "$INSTALL_DIR")
+    EXEC_NAME=$(prompt_user "How will you call your agent?" "$EXEC_NAME")
+    EXEC_NAME=$(basename "$EXEC_NAME")
+    CONFIG_DIR=$(prompt_user "Enter configuration directory" "$CONFIG_DIR")
+    CONFIG_DIR="${CONFIG_DIR/#\~/$HOME}"  # Expand ~ manually
+    CONFIG_DIR=$(realpath -m  "$CONFIG_DIR")
+    echo config dir: $CONFIG_DIR
+    mkdir -p "$INSTALL_DIR" && cp "$0" "$INSTALL_DIR/$EXEC_NAME"
+    # if failed, prompt:
+    if [ $? -ne 0 ]; then
+        debug "Failed to install in $INSTALL_DIR/$EXEC_NAME."  
+        return 1
+    fi
+
+    # Set the vars in the script
+    sed -i "s|EXEC_NAME=\"[^\"]*\"|EXEC_NAME=\"$EXEC_NAME\"|" "$INSTALL_DIR/$EXEC_NAME"
+    sed -i "s|INSTALL_DIR=\"[^\"]*\"|INSTALL_DIR=\"$INSTALL_DIR\"|" "$INSTALL_DIR/$EXEC_NAME"
+    sed -i "s|CONFIG_DIR=\"[^\"]*\"|CONFIG_DIR=\"$CONFIG_DIR\"|" "$INSTALL_DIR/$EXEC_NAME"
+    
+    # Make executable
+    chmod +x "$INSTALL_DIR/$EXEC_NAME"
+
+    # if install path is not in PATH, add it
+    if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
+        export PATH=\"$INSTALL_DIR:\$PATH\"
+
+        # Get the proper rc file for the current using shell:
+        if [ -n "$ZSH_VERSION" ]; then
+            RC_FILE="$HOME/.zshrc"
+        elif [ -n "$BASH_VERSION" ]; then
+            RC_FILE="$HOME/.bashrc"
+        else
+            debug "Unsupported shell"
+            return 1
+        fi
+        debug "Adding $INSTALL_DIR to PATH in $RC_FILE"
+        echo "export PATH=\"$INSTALL_DIR:\$PATH\"; $EXEC_NAME --start" >> $RC_FILE
+    fi
+
+    # Remove current script and run the new one
+    rm "$0"
+    exec "$INSTALL_DIR/$EXEC_NAME" "$@"
+
+    info "Done installing, you might need to restart your shell to use it."
+    return 0
+}
+
+show_version() {
+    RELEASE_DATE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.published_at')
+    printf '\nTerminal assistant script %s\n  Repo: %s\n  Release date: %s\n' "${VERSION}" "${REPO}" "${RELEASE_DATE}"
+    exit 0
+}
+
+update_required() {
+    # What about non-git update option?
+    CURRENT_VERSION=${VERSION}
+    LATEST_VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.tag_name')
+
+    # Check if the API returned a valid version
+    if [ "$LATEST_VERSION" == "null" ] || [ -z "$LATEST_VERSION" ]; then
+        debug "Failed to fetch the latest version."
+        return 2
+    fi
+
+    # Compare versions
+    if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
+        debug "Newer release available: $LATEST_VERSION (Current: $CURRENT_VERSION)"
+        return 0  # Update is required
+    else
+        debug "You're up to date! ($CURRENT_VERSION)"
+        return 1  # No update required
+    fi
+}
+
+
+do_update() {
+    if [ "$(get_config auto_update)" = "true" ]; then
+        runSelfUpdate $0 "$@"
+    else
+      debug "Not updatding because Auto-update is disabled."
+    fi
+
+    return 0
+}
+runSelfUpdate() {
+  debug "Performing self-update..."
+
+  # new Version path:
+#   UPDATE_URL=https://github.com/${REPO}/archive/refs/tags/${LATEST_VERSION}.zip
+  UPDATE_URL=https://github.com/${REPO}/releases/download/${LATEST_VERSION}/install
+
+  # Download new version
+  debug "Downloading latest version..."
+  if ! wget --quiet --output-document="$0.tmp" $UPDATE_URL ; then
+    debug "Failed: Error while trying to wget new version!"
+    debug "File requested: $UPDATE_URL"
+    return 1
+  fi
+  debug "Done."
+
+  # Copy over modes from old version
+  OCTAL_MODE=$(stat -c '%a' $0)
+  if ! chmod $OCTAL_MODE "$0.tmp" ; then
+    debug "Failed: Error while trying to set mode on $0.tmp."
+    return 1
+  fi
+
+  # Spawn update script
+  cat > updateScript.sh << EOF
+        #!/bin/bash
+        # Overwrite old file with new
+        if mv "$0.tmp" "$0"; then
+        #   echo "Done. Update complete."
+        rm -f \$0
+        exec /bin/bash "$@"
+        # else
+        #   echo "Failed!"
+        fi
+EOF
+
+  debug "Inserting update process..."
+  exec /bin/bash updateScript.sh "$@"
+}
+
+# # Example usage
+# update_required
+# if [ $? -eq 0 ]; then
+#     echo "Update is needed!"
+# else
+#     echo "No update required."
+# fi
+
+show_usage() {
+    cat <<- HELP
+$EXEC_NAME - Your assistant, in your terminal.
+    USAGE: $EXEC_NAME [OPTIONS] [REQUEST TEXT]
+
+HELP
+    exit 0
+}
+
+start_terminal_recording() {
+    echo "TODO"
+    exit 0
+}
+stop_terminal_recording() {
+    echo "TODO"
+    exit 0
+}
+
+handle_prompt() {
+    echo "Handling prompt: $@"
+    exit 0
+}
+
+process_arguments() {
+    # Parse command-line arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in 
+            -h*	  ) show_usage;;
+            --help	  ) show_usage;;
+            --start  ) start_terminal_recording;;
+            --stop  ) stop_terminal_recording;;
+            --update  ) do_update;;
+            -v	  ) show_version;;
+            -V	  ) show_version;;
+            --version ) show_version;;
+            -*	  ) error "Unknown command argument $1"; show_usage;;
+            *	  ) shift;;
+            # --wd)
+            #     if [[ -n "$2" && "$2" != --* ]]; then
+            #         WORKING_DIR="$2"
+            #         shift 2
+            #     else
+            #         echo "Error: --wd requires a directory argument"
+            #         exit 1
+            #     fi
+            #     ;;
+            # *)
+            #     echo "Unknown option: $1"
+            #     shift
+            #     ;;
+        esac
+    done
+}
+
+main() {
+    debug "Running from $0"
+
+    if installation_required; then
+        debug "Installation is required!"
+        do_install "$@"
+    fi
+
+    load_config
+
+    if update_required; then
+        debug "Update is needed!"
+        do_update "$@"
+    fi
+
+    process_arguments "$@"
+
+    # if user added prompt, handle it
+    if [ -n "$1" ]; then
+        handle_prompt "$@"
+    else
+        echo "Start Menu/Session"
+    fi
+
+    # update_config "check.me" "{\"hello\": \"world\"}"
+    # echo "Check is : $(get_config check.me)"
+    # remove_config "check"
+
+    send_message hello, who are you? answer in 2 sentenses please.
+    # load_history
+    
+}
+
+main "$@"

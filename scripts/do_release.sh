@@ -5,8 +5,11 @@ eval $(head -1 src/config)
 CURR_DIR=$(dirname "$0");
 
 # Create the script
-SCRIPT_PATH=$(mktemp)
-bash "$CURR_DIR/create_release.sh" "$SCRIPT_PATH"; 
+TMP_PATH=$(mktemp)
+SCRIPT_PATH=$CURR_DIR/install
+bash "$CURR_DIR/create_release.sh" "$TMP_PATH"; 
+mv $TMP_PATH $SCRIPT_PATH
+chmod +x $SCRIPT_PATH
 
 # Ensure the script file exists
 if [ ! -f "$SCRIPT_PATH" ]; then
@@ -33,12 +36,12 @@ git push origin "$VERSION"
 
 # Optional: Create a GitHub release and upload the script (requires GitHub CLI)
 if command -v gh &>/dev/null; then
-    gh release create "$VERSION" "$SCRIPT_PATH#ai" \
+    gh release create "$VERSION" "$SCRIPT_PATH#install" \
         --title "Release $VERSION" \
         --notes "Automated release for version $VERSION"
     echo "[INFO] GitHub release created with script upload."
 else
     echo "[WARNING] GitHub CLI (gh) not found. Release not created."
 fi
-
+rm -rf $SCRIPT_PATH
 echo "[INFO] Version $VERSION committed, pushed, tagged, and script uploaded."

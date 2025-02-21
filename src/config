@@ -1,4 +1,4 @@
-VERSION="v1.0.2"
+VERSION="v1.0.3"
 REPO="doryashar/terminal-assistant"
 DEBUG=1
 EXEC_NAME="ai"
@@ -19,7 +19,7 @@ create_config() {
     # Create the config file
     cat <<EOF > "$CONFIG_DIR/$CONFIG_FILE"
     {
-        "auto_update": "false",
+        "auto_update": "true",
         "system_prompt": "You are a helpful assistant.",
         "prompt_template": {
             "messages": [

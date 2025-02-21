@@ -40,7 +40,7 @@ runSelfUpdate() {
 
   # new Version path:
 #   UPDATE_URL=https://github.com/${REPO}/archive/refs/tags/${LATEST_VERSION}.zip
-  UPDATE_URL=https://github.com/${REPO}/releases/download/${LATEST_VERSION}/${EXEC_NAME}
+  UPDATE_URL=https://github.com/${REPO}/releases/download/${LATEST_VERSION}/install
 
   # Download new version
   debug "Downloading latest version..."
