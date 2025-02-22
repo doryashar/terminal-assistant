@@ -18,7 +18,7 @@ stop_terminal_recording() {
 
 handle_prompt() {
     echo "Handling prompt: $@"
-    exit 0
+    # exit 0
 }
 
 process_arguments() {
@@ -53,11 +53,13 @@ process_arguments() {
 }
 
 main() {
-    debug "Running from $0"
+    debug "Running from $0, $@"
 
     if installation_required; then
         debug "Installation is required!"
         do_install "$@"
+    else
+        debug "Already installed."
     fi
 
     load_config
@@ -66,23 +68,27 @@ main() {
         debug "Update is needed!"
         do_update "$@"
     fi
+    
+    init_conversations
 
     process_arguments "$@"
+    if [ -p /dev/stdin ]; then
+        # piped_input="$(</dev/stdin)"
+        piped_input="$(cat -)"
+    fi
 
     # if user added prompt, handle it
     if [ -n "$1" ]; then
         handle_prompt "$@"
+        send_message "$*" "$piped_input"
+    elif [ -n "$piped_input" ]; then
+        handle_prompt "$(cat -)"
     else
         echo "Start Menu/Session"
-    fi
-
-    # update_config "check.me" "{\"hello\": \"world\"}"
-    # echo "Check is : $(get_config check.me)"
-    # remove_config "check"
-
-    send_message hello, who are you? answer in 2 sentenses please.
-    # load_history
-    
+        update_config "check.me" "{\"hello\": \"world\"}"
+        echo "Check is : $(get_config check.me)"
+        remove_config "check"
+    fi    
 }
 
 main "$@"

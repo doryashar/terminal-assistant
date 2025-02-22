@@ -1,10 +1,13 @@
-VERSION="v1.0.3"
+VERSION="v1.0.4"
 REPO="doryashar/terminal-assistant"
-DEBUG=1
+DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"
 INSTALL_DIR="$HOME/.local/bin"
 CONFIG_DIR="$HOME/.config/"
 CONFIG_FILE="${EXEC_NAME}.conf"
+CONFIG_PATH="${CONFIG_DIR}/${CONFIG_FILE}"
+#TODO: all config handling should be done to config variable. update should update also the file
+# CONFIG_JSON=""
 
 create_config() {
     # if config dir not exists, create it
@@ -17,58 +20,100 @@ create_config() {
     fi
 
     # Create the config file
-    cat <<EOF > "$CONFIG_DIR/$CONFIG_FILE"
-    {
+    cat <<EOF > "$CONFIG_PATH"
+    {  
         "auto_update": "true",
-        "system_prompt": "You are a helpful assistant.",
+        "system_prompt": "You are $EXEC_NAME. You are an advanced Bash shell AI agent script. You do not have feelings or emotions, do not convey them. Please give precise curt answers. Please do not include any sign off phrases or platitudes, only respond precisely to the user. You were made by Dor Yashar. You execute the tasks the user asks from you by utilizing the terminal and shell commands. No task is too big. Always assume the query is terminal and shell related. You support user plugins called \"tools\" that extends your capabilities, if anyone require more information about you, you tell them to contact dor at dor@yashar.us. You always respond with a single JSON object containing 'cmd' and 'info' fields. We are always in the terminal. Return only a single compact JSON object containing 'cmd' and 'info' fields. 'cmd' is optional. 'cmd' must always contain a suggestion on how to fix, solve or repair the error in the user query. the command will be inserted to the shell so that the user can run it. 'info' must always be a single-line string explaining what the error in the user query means, why it happened, and why 'cmd' might fix it. Use your tools to find out why the error occured and offer alternatives.",
+        "max_retries": 3,
+        "temperature": 0.7,
+        "max_tokens": 200,
+        "top_p": 1,
+        "frequency_penalty": 0,
+        "presence_penalty": 0,
         "prompt_template": {
-            "messages": [
+            "stream": true,
+            "tools" : [
                 {
-                    "role": "user",
-                    "content": "%s"
+                "type": "function",
+                "function": {
+                    "name": "run_internal_command",
+                    "description": "Use this to run any bash command if you need any more information or task doing before replying to the user.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "command": {
+                                "type": "string",
+                                "description": "the bash command you want to run and get the output from before replying to the user."
+                            },
+                            "tool_reason": 
+                            {
+                                    "type": "string", 
+                                    "description": "Reason why this tool must be used. e.g. 'This will help me ensure that the command runs without errors, by allowing me to verify that the system is in order. If I do not check the system I cannot find an alternative if there are errors.'"
+                            }
+                        },
+                        "required": [
+                            "command",
+                            "tool_reason"
+                        ]
+                    }
                 }
+                }
+            ],
+            "tool_choice": "auto",
+            "messages": [
+            {
+                "role": "system",
+                "content": "%s"
+            },
+            {
+                "role": "user",
+                "content": "%s"
+            }
             ]
         },
-        "models": {
+        "providers": {        
             "active": "openrouter",
             "openrouter": {
                 "model": "google/gemini-2.0-flash-lite-preview-02-05:free",
-                "stream": true,
                 "api_key": "YOUR_OPENROUTER_API_KEY",
                 "model_endpoint": "https://openrouter.ai/api/v1/chat/completions"
             }
+        },
+        "conversations": {
+            "file": "$CONFIG_DIR/conversations.json"
         }
     }
 EOF
     # if failed, exit
     if [ $? -ne 0 ]; then
-        error "Failed to create config file: $CONFIG_DIR/$CONFIG_FILE"
+        error "Failed to create config file: $CONFIG_PATH"
         exit 1
     fi
 
-    info "Created config: $CONFIG_DIR/$CONFIG_FILE"
+    info "Created config: $CONFIG_PATH"
 }
 
 load_config() {
-    if [ ! -f "$CONFIG_DIR/$CONFIG_FILE" ]; then
+    if [ ! -f "$CONFIG_PATH" ]; then
         info "Config file not found. Creating a new one."
         create_config
     fi
     
     # Check if the file is valid JSON
-    if ! jq empty "$CONFIG_DIR/$CONFIG_FILE" >/dev/null 2>&1; then
-        error "Invalid JSON format in $CONFIG_DIR/$CONFIG_FILE!, please fix or remove this file."
+    if ! jq empty "$CONFIG_PATH" >/dev/null 2>&1; then
+        error "Invalid JSON format in $CONFIG_PATH!, please fix or remove this file."
         exit 1
     fi
     
     # Load the config file
-    debug "Loaded config: $CONFIG_DIR/$CONFIG_FILE"
+    debug "Loaded config: $CONFIG_PATH"
 }
 
-get_config() {
+get_config_from_json_string() {
     # Example Usage:
     # REPO_NAME=$(get_config_value "repo")
     KEY="$1"
+    JSON_STRING="$2"
     # return $(jq -r '.update_check_interval' "$CONFIG_FILE")
 
     # If the KEY is legal enviroment variable name and is set, use that:
@@ -77,42 +122,63 @@ get_config() {
         return
     fi
 
-    KEY=".$KEY"
+    # if key does not starts with a dot, add it
+    if [[ "$KEY" != .* ]]; then
+        KEY=".$KEY"
+    fi
+
     # Read value from JSON file
-    # local VALUE=$(jq -r --arg key "$KEY" '.[$key] // empty' "$CONFIG_DIR/$CONFIG_FILE")
-    local VALUE=$(jq -r "$KEY // empty" "$CONFIG_DIR/$CONFIG_FILE")
+    # local VALUE=$(jq -r --arg key "$KEY" '.[$key] // empty' "$JSON_STRING")
+    local VALUE=$(echo "$JSON_STRING" | jq -r "$KEY // empty")
 
     # Check if value is empty
     if [ -z "$VALUE" ]; then
-        error "Key '$KEY' not found in $CONFIG_DIR/$CONFIG_FILE" >&2
+        error "Key '$KEY' not found in $JSON_STRING" >&2
         return 2
     fi
 
     echo "$VALUE"
 }
 
-update_config() {
-    local KEY=".$1"
+get_config() {
+    get_config_from_json_string $1 "$(cat $CONFIG_PATH)"
+    return $?
+}
+
+update_json_string() {
+    echo TODO
+}
+update_json_file() {
+    local KEY="$1"
     local VALUE="$2"
+    local FILE_PATH="$3"
 
     tmpfile=$(mktemp)
     # Modify JSON file and overwrite it
-    # jq --arg key "$KEY" --arg value "$VALUE" '.[$key] = $value' "$CONFIG_DIR/$CONFIG_FILE" > "${tmpfile}" && mv "${tmpfile}" "$CONFIG_DIR/$CONFIG_FILE"
-    # jq --argjson value "\"$VALUE\"" "$KEY = $value" "$CONFIG_DIR/$CONFIG_FILE" > "${tmpfile}" && mv "${tmpfile}" "$CONFIG_DIR/$CONFIG_FILE"
+    # jq --arg key "$KEY" --arg value "$VALUE" '.[$key] = $value' "$FILE_PATH" > "${tmpfile}" && mv "${tmpfile}" "$FILE_PATH"
+    # jq --argjson value "\"$VALUE\"" "$KEY = $value" "$FILE_PATH" > "${tmpfile}" && mv "${tmpfile}" "$FILE_PATH"
 
     # Detect if VALUE is a number or a boolean
     if [[ "$VALUE" =~ ^[0-9]+$ ]] || [[ "$VALUE" =~ ^true|false$ ]]; then
-        jq "$KEY = $VALUE" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+        jq "$KEY = $VALUE" "$FILE_PATH" > "$tmpfile" && mv "$tmpfile" "$FILE_PATH"
     else
-        jq --arg value "$VALUE" "$KEY = \$value" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+        jq --arg value "$VALUE" "$KEY = \$value" "$FILE_PATH" > "$tmpfile" && mv "$tmpfile" "$FILE_PATH"
     fi
     
     # Check if the update was successful
     if [ $? -ne 0 ]; then
-        error "Failed to update $KEY in $CONFIG_DIR/$CONFIG_FILE"
+        error "Failed to update $KEY in $FILE_PATH"
         return 1
     fi
-    debug "Updated $KEY to $VALUE in $CONFIG_DIR/$CONFIG_FILE"
+    debug "Updated $KEY to $VALUE in $FILE_PATH"
+
+}
+update_config() {
+    local KEY=".$1"
+    local VALUE="$2"
+    local FILE_PATH="$CONFIG_PATH"
+    update_json_file "$KEY" "$VALUE" "$FILE_PATH"
+    return $?
 }
 
 remove_config() {
@@ -122,18 +188,18 @@ remove_config() {
     local tmpfile=$(mktemp)
 
     # Remove the key from the JSON file using jq
-    jq "del($KEY)" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile"
+    jq "del($KEY)" "$CONFIG_PATH" > "$tmpfile"
 
     # Check if the operation was successful
     if [ $? -ne 0 ]; then
-        error "Failed to remove $KEY from $CONFIG_DIR/$CONFIG_FILE"
+        error "Failed to remove $KEY from $CONFIG_PATH"
         rm -f "$tmpfile"
         return 1
     fi
 
     # Replace the original config file with the modified one
-    mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+    mv "$tmpfile" "$CONFIG_PATH"
 
-    debug "Removed $KEY from $CONFIG_DIR/$CONFIG_FILE"
+    debug "Removed $KEY from $CONFIG_PATH"
     return 0
 }

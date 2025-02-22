@@ -3,7 +3,7 @@
 # Get the version from the config file
 eval $(head -1 src/config)
 CURR_DIR=$(dirname "$0");
-
+LATEST_RELEASE=$(git describe --tags --abbrev=0)
 # Create the script
 TMP_PATH=$(mktemp)
 SCRIPT_PATH=$CURR_DIR/install

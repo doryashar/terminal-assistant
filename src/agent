@@ -1,67 +1,157 @@
-#!/bin/bash
-
 send_json_to_api() {
-    in_box
-    content="$*"
-    model_endpoint=$(get_config models.openrouter.model_endpoint)
-    OPENROUTER_API_KEY=$(get_config models.openrouter.api_key)
-    curl -sS --no-buffer -X POST "$model_endpoint" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-    -d "$content" | while IFS= read -r line; do
-            # Save raw JSON to file
-            # echo $line >> output.txt
-            line=$(echo "$line" | sed 's/^data: //')
+    model_endpoint=$1 #(get_config models.openrouter.model_endpoint)
+    OPENROUTER_API_KEY=$2 #(get_config models.openrouter.api_key)
+    content="$3"
+    conv_id=$4
+    full_response=""
+    max_retries=$(get_config max_retries)
+    local retry_count=0
+    code="ERROR"
 
+    while [ $retry_count -lt $max_retries ]; do
+
+        (
+        # mkfifo myfifo  # Create a named pipe (FIFO)
+        # trap "rm -f myfifo" EXIT  # Ensure cleanup
+        spinner
+        curl -sS --no-buffer -X POST "$model_endpoint" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+        -w "\nCODE: %{http_code}\n" -d "$content" | while IFS= read -r line; do
+            #TODO: if line starts with "data: " start recording until blank line. then handle message
+
+            line=$(echo "$line" | sed 's/^data: //')
             # Skip empty lines
             [[ -z "$line" ]] && continue
             [[ "$line" == ": OPENROUTER PROCESSING" ]] && continue
-            [[ "$line" == "[DONE]" ]] && break
+            if [[ "$line" == "[DONE]" ]]; then
+                if [[ -n $buffer ]]; then
+                    error "ERROR, Buffer is $buffer"
+                    return 1
+                fi 
+                continue
+            fi
+            if [[ "$line" == "CODE: "* ]]; then
+                code=$(echo "$line" | sed 's/^CODE: //')
+                if [ "$SPINNER_ON" -eq 1 ]; then
+                    spinner
+                fi
+                exit $code
+            fi
 
             # Append new data to buffer
             buffer+="$(printf "%s" "$line")"
             
             # Check if we have a full JSON object (ends with } or [DONE])
             if [[ "$line" == *"}" ]]; then
-                # Try parsing JSON, otherwise print an error
                 if echo "$buffer" | jq empty 2>/dev/null; then
                     content=$(echo "$buffer" | jq -r '.choices[0].delta.content // empty')
-                    if [[ ! $content == "" ]]; then
-                        in_box "$content"  # Print to terminal
-                    else 
-                        in_box #$buffer
+                    if [ "$SPINNER_ON" -eq 1 ]; then
+                        spinner
                     fi
-                    # If the response signals stop, break the loop
-                    # finish_reason=$(echo "$buffer" | jq -r '.choices[0].finish_reason // empty')
-                    # [[ "$finish_reason" == "stop" ]] && continue
+                    if [[ ! $content == "" ]]; then
+                        in_box "$content"
+                        full_response+="$content"
+                    else
+                        # Finished the response, close the box
+                        [[ -n $conv_id ]] && save_message "$conv_id" "assistant" "$full_response"
+                        in_box
+                    fi
                 else
-                    error "Invalid JSON received: $buffer" #>>error.log
+                    save_message "$conv_id" "system" "Error: Invalid JSON response"
+                    error "Invalid JSON received: $buffer"
                 fi
-
-                # Reset buffer after processing a full JSON object
                 buffer=""
-                # echo P$position,$line
             fi
         done
-    if [[ -n $buffer ]]; then
-        error "ERROR, Buffer is $buffer"
-    fi
-    return
+        ) || http_code=$?
+        # rm -f myfifo
+
+        case $http_code in
+            200)
+                debug "HTTP 200 OK"
+                return 0
+                ;;
+            401)
+                save_message "$conv_id" "system" "Error: Invalid API key"
+                error "Authentication failed. Please check your API key."
+                return 1
+                ;;
+            429)
+                if [ $retry_count -lt $((max_retries-1)) ]; then
+                    save_message "$conv_id" "system" "Rate limit exceeded, retrying..."
+                    error "Rate limit exceeded, retrying..."
+                    sleep $((2 ** retry_count))
+                    ((retry_count++))
+                    continue
+                else
+                    save_message "$conv_id" "system" "Error: Rate limit exceeded"
+                    error "Rate limit exceeded after $max_retries retries"
+                    return 1
+                fi
+                ;;
+            500|502|503|504)
+                if [ $retry_count -lt $((max_retries-1)) ]; then
+                    save_message "$conv_id" "system" "Server error, retrying..."
+                    error "Server error, retrying..."
+                    sleep $((2 ** retry_count))
+                    ((retry_count++))
+                    continue
+                else
+                    save_message "$conv_id" "system" "Error: Server error after multiple retries"
+                    error "Server error after $max_retries retries"
+                    return 1
+                fi
+                ;;
+            *)
+                save_message "$conv_id" "system" "Error: Unexpected response (HTTP $http_code)"
+                error "Unexpected response (HTTP $http_code): $body"
+                return 1
+                ;;
+        esac
+    done
+    
 }
 
 send_message() {
-    message_to_send="$*"
-    selected_model=$(get_config models.$(get_config models.active))
-    model=$(echo "$selected_model" | jq '.model')
-    stream=$(echo "$selected_model" | jq '.stream')
-    content=$(jq --argjson model "$model" '. + {model: $model}' <<< "$(get_config prompt_template)")
-    content=$(jq --argjson stream "$stream" '. + {stream: $stream}' <<< "$content")
-    content=$(printf "$content" "$message_to_send")
-    # echo "" > output.txt
-    send_json_to_api "$content"
-    # Try to send
-    # Wait for response
-    # If response is not received in time, try again 3 times or exit
-    # If response is received, return the response
-    echo "TODO"
+    local prompt="$1"
+    local piped_input="$2"
+    local conv_id="$3"
+    local message_to_send="$prompt"
+
+    if [[ -n $piped_input ]]; then
+        message_to_send+="\nReference: $piped_input"
+    fi
+
+    # Create new conversation if no ID provided
+    if [ -z "$conv_id" ]; then
+        # Get model and system prompt from config
+        selected_model=$(get_config providers.$(get_config providers.active))
+        model=$(echo "$selected_model" | jq '.model')
+        api_key=$(get_config_from_json_string api_key "$selected_model")
+        model_endpoint=$(get_config_from_json_string model_endpoint "$selected_model")
+
+        local system_prompt=$(get_config system_prompt)
+
+        dynamic_prompt="You are located at \"$0\" within SHELL:${SHELL}. your version is ${VERSION}. The user is using \"$UNIX_NAME\" and specifically distribution \"$DISTRO_INFO\". The users username is \"$USER\" with home \"$HOME\". You must always use LANG $LANG and LC_TIME $LC_TIME."
+        system_prompt+="\n$dynamic_prompt"
+        conv_id=$(create_new_conversation "$model" "$system_prompt")
+
+        debug "Getting prompt template for $model"
+        template=$(get_config prompt_template)
+        debug "inserting model to template"
+        content=$(jq --argjson model "$model" '. + {model: $model}' <<< "$template")
+        debug "inserting system prompt and text to template"
+        content=$(printf "$content" "$system_prompt" "$message_to_send")
+        debug "SELECTED MODEL: $selected_model"
+
+    
+    fi
+    # Save user message
+    save_message "$conv_id" "user" "$message_to_send"
+
+    send_json_to_api "$model_endpoint" "$api_key" "$content" "$conv_id"    # | while read -r response; do
+
+    # Return conversation ID for future reference
+    debug "Conversation: $conv_id"
 }

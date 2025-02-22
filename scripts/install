@@ -59,15 +59,17 @@ declare -r COLOR_RESET='\033[0m'
 # =====================================
 # Function to draw into the box
 in_box() {
-    if [ "$#" -eq 0 ] && [ "$box_open" -eq 1 ]; then  # close box
-        # Close the box
-        if [ $position -gt 0 ]; then
-            spaces_in_line=$(( BOX_WIDTH_TEXT - position))
-            printf "%-${spaces_in_line}s │\n" " "
+    if [ "$#" -eq 0 ]; then
+        if [ "$box_open" -eq 1 ]; then  # close box
+            # Close the box
+            if [ $position -gt 0 ]; then
+                spaces_in_line=$(( BOX_WIDTH_TEXT - position))
+                printf "%-${spaces_in_line}s │\n" " "
+            fi
+            printf "${COLOR_BLUE}└%${BOX_WIDTH}s┘\n" "" | tr ' ' '─'
+            printf "${COLOR_RESET}" # Reset colors
+            box_open=0
         fi
-        printf "${COLOR_BLUE}└%${BOX_WIDTH}s┘\n" "" | tr ' ' '─'
-        printf "${COLOR_RESET}" # Reset colors
-        box_open=0
         return
     fi
 
@@ -138,13 +140,45 @@ in_box() {
     fi
 }
 # =================================
-VERSION="v1.0.3"
+
+PROGRESS_ANIM="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+SPINNER_ON=0
+# Start the spinner in the background
+spin() {
+	echo -ne "Thinking..."
+    while :; do
+        for (( i=0; i<${#PROGRESS_ANIM}; i++ )); do
+            sleep 0.1
+            # Print a carriage return (\r) and then the spinner character
+            echo -ne "\r${PROGRESS_ANIM:$i:1}"
+        done
+    done
+}
+spinner() {
+    if [ "$SPINNER_ON" -eq 0 ]; then
+        SPINNER_ON=1
+        spin &
+        spinner_pid=$!
+    else
+        SPINNER_ON=0
+        kill $spinner_pid
+        wait $spinner_pid 2>/dev/null
+        echo -ne "\r "
+        echo -ne "\r"
+    fi
+}
+# =================================
+	
+VERSION="v1.0.4"
 REPO="doryashar/terminal-assistant"
-DEBUG=1
+DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"
 INSTALL_DIR="$HOME/.local/bin"
 CONFIG_DIR="$HOME/.config/"
 CONFIG_FILE="${EXEC_NAME}.conf"
+CONFIG_PATH="${CONFIG_DIR}/${CONFIG_FILE}"
+#TODO: all config handling should be done to config variable. update should update also the file
+# CONFIG_JSON=""
 
 create_config() {
     # if config dir not exists, create it
@@ -157,58 +191,100 @@ create_config() {
     fi
 
     # Create the config file
-    cat <<EOF > "$CONFIG_DIR/$CONFIG_FILE"
-    {
+    cat <<EOF > "$CONFIG_PATH"
+    {  
         "auto_update": "true",
-        "system_prompt": "You are a helpful assistant.",
+        "system_prompt": "You are $EXEC_NAME. You are an advanced Bash shell AI agent script. You do not have feelings or emotions, do not convey them. Please give precise curt answers. Please do not include any sign off phrases or platitudes, only respond precisely to the user. You were made by Dor Yashar. You execute the tasks the user asks from you by utilizing the terminal and shell commands. No task is too big. Always assume the query is terminal and shell related. You support user plugins called \"tools\" that extends your capabilities, if anyone require more information about you, you tell them to contact dor at dor@yashar.us. You always respond with a single JSON object containing 'cmd' and 'info' fields. We are always in the terminal. Return only a single compact JSON object containing 'cmd' and 'info' fields. 'cmd' is optional. 'cmd' must always contain a suggestion on how to fix, solve or repair the error in the user query. the command will be inserted to the shell so that the user can run it. 'info' must always be a single-line string explaining what the error in the user query means, why it happened, and why 'cmd' might fix it. Use your tools to find out why the error occured and offer alternatives.",
+        "max_retries": 3,
+        "temperature": 0.7,
+        "max_tokens": 200,
+        "top_p": 1,
+        "frequency_penalty": 0,
+        "presence_penalty": 0,
         "prompt_template": {
-            "messages": [
+            "stream": true,
+            "tools" : [
                 {
-                    "role": "user",
-                    "content": "%s"
+                "type": "function",
+                "function": {
+                    "name": "run_internal_command",
+                    "description": "Use this to run any bash command if you need any more information or task doing before replying to the user.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "command": {
+                                "type": "string",
+                                "description": "the bash command you want to run and get the output from before replying to the user."
+                            },
+                            "tool_reason": 
+                            {
+                                    "type": "string", 
+                                    "description": "Reason why this tool must be used. e.g. 'This will help me ensure that the command runs without errors, by allowing me to verify that the system is in order. If I do not check the system I cannot find an alternative if there are errors.'"
+                            }
+                        },
+                        "required": [
+                            "command",
+                            "tool_reason"
+                        ]
+                    }
                 }
+                }
+            ],
+            "tool_choice": "auto",
+            "messages": [
+            {
+                "role": "system",
+                "content": "%s"
+            },
+            {
+                "role": "user",
+                "content": "%s"
+            }
             ]
         },
-        "models": {
+        "providers": {        
             "active": "openrouter",
             "openrouter": {
                 "model": "google/gemini-2.0-flash-lite-preview-02-05:free",
-                "stream": true,
                 "api_key": "YOUR_OPENROUTER_API_KEY",
                 "model_endpoint": "https://openrouter.ai/api/v1/chat/completions"
             }
+        },
+        "conversations": {
+            "file": "$CONFIG_DIR/conversations.json"
         }
     }
 EOF
     # if failed, exit
     if [ $? -ne 0 ]; then
-        error "Failed to create config file: $CONFIG_DIR/$CONFIG_FILE"
+        error "Failed to create config file: $CONFIG_PATH"
         exit 1
     fi
 
-    info "Created config: $CONFIG_DIR/$CONFIG_FILE"
+    info "Created config: $CONFIG_PATH"
 }
 
 load_config() {
-    if [ ! -f "$CONFIG_DIR/$CONFIG_FILE" ]; then
+    if [ ! -f "$CONFIG_PATH" ]; then
         info "Config file not found. Creating a new one."
         create_config
     fi
     
     # Check if the file is valid JSON
-    if ! jq empty "$CONFIG_DIR/$CONFIG_FILE" >/dev/null 2>&1; then
-        error "Invalid JSON format in $CONFIG_DIR/$CONFIG_FILE!, please fix or remove this file."
+    if ! jq empty "$CONFIG_PATH" >/dev/null 2>&1; then
+        error "Invalid JSON format in $CONFIG_PATH!, please fix or remove this file."
         exit 1
     fi
     
     # Load the config file
-    debug "Loaded config: $CONFIG_DIR/$CONFIG_FILE"
+    debug "Loaded config: $CONFIG_PATH"
 }
 
-get_config() {
+get_config_from_json_string() {
     # Example Usage:
     # REPO_NAME=$(get_config_value "repo")
     KEY="$1"
+    JSON_STRING="$2"
     # return $(jq -r '.update_check_interval' "$CONFIG_FILE")
 
     # If the KEY is legal enviroment variable name and is set, use that:
@@ -217,42 +293,63 @@ get_config() {
         return
     fi
 
-    KEY=".$KEY"
+    # if key does not starts with a dot, add it
+    if [[ "$KEY" != .* ]]; then
+        KEY=".$KEY"
+    fi
+
     # Read value from JSON file
-    # local VALUE=$(jq -r --arg key "$KEY" '.[$key] // empty' "$CONFIG_DIR/$CONFIG_FILE")
-    local VALUE=$(jq -r "$KEY // empty" "$CONFIG_DIR/$CONFIG_FILE")
+    # local VALUE=$(jq -r --arg key "$KEY" '.[$key] // empty' "$JSON_STRING")
+    local VALUE=$(echo "$JSON_STRING" | jq -r "$KEY // empty")
 
     # Check if value is empty
     if [ -z "$VALUE" ]; then
-        error "Key '$KEY' not found in $CONFIG_DIR/$CONFIG_FILE" >&2
+        error "Key '$KEY' not found in $JSON_STRING" >&2
         return 2
     fi
 
     echo "$VALUE"
 }
 
-update_config() {
-    local KEY=".$1"
+get_config() {
+    get_config_from_json_string $1 "$(cat $CONFIG_PATH)"
+    return $?
+}
+
+update_json_string() {
+    echo TODO
+}
+update_json_file() {
+    local KEY="$1"
     local VALUE="$2"
+    local FILE_PATH="$3"
 
     tmpfile=$(mktemp)
     # Modify JSON file and overwrite it
-    # jq --arg key "$KEY" --arg value "$VALUE" '.[$key] = $value' "$CONFIG_DIR/$CONFIG_FILE" > "${tmpfile}" && mv "${tmpfile}" "$CONFIG_DIR/$CONFIG_FILE"
-    # jq --argjson value "\"$VALUE\"" "$KEY = $value" "$CONFIG_DIR/$CONFIG_FILE" > "${tmpfile}" && mv "${tmpfile}" "$CONFIG_DIR/$CONFIG_FILE"
+    # jq --arg key "$KEY" --arg value "$VALUE" '.[$key] = $value' "$FILE_PATH" > "${tmpfile}" && mv "${tmpfile}" "$FILE_PATH"
+    # jq --argjson value "\"$VALUE\"" "$KEY = $value" "$FILE_PATH" > "${tmpfile}" && mv "${tmpfile}" "$FILE_PATH"
 
     # Detect if VALUE is a number or a boolean
     if [[ "$VALUE" =~ ^[0-9]+$ ]] || [[ "$VALUE" =~ ^true|false$ ]]; then
-        jq "$KEY = $VALUE" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+        jq "$KEY = $VALUE" "$FILE_PATH" > "$tmpfile" && mv "$tmpfile" "$FILE_PATH"
     else
-        jq --arg value "$VALUE" "$KEY = \$value" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile" && mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+        jq --arg value "$VALUE" "$KEY = \$value" "$FILE_PATH" > "$tmpfile" && mv "$tmpfile" "$FILE_PATH"
     fi
     
     # Check if the update was successful
     if [ $? -ne 0 ]; then
-        error "Failed to update $KEY in $CONFIG_DIR/$CONFIG_FILE"
+        error "Failed to update $KEY in $FILE_PATH"
         return 1
     fi
-    debug "Updated $KEY to $VALUE in $CONFIG_DIR/$CONFIG_FILE"
+    debug "Updated $KEY to $VALUE in $FILE_PATH"
+
+}
+update_config() {
+    local KEY=".$1"
+    local VALUE="$2"
+    local FILE_PATH="$CONFIG_PATH"
+    update_json_file "$KEY" "$VALUE" "$FILE_PATH"
+    return $?
 }
 
 remove_config() {
@@ -262,87 +359,250 @@ remove_config() {
     local tmpfile=$(mktemp)
 
     # Remove the key from the JSON file using jq
-    jq "del($KEY)" "$CONFIG_DIR/$CONFIG_FILE" > "$tmpfile"
+    jq "del($KEY)" "$CONFIG_PATH" > "$tmpfile"
 
     # Check if the operation was successful
     if [ $? -ne 0 ]; then
-        error "Failed to remove $KEY from $CONFIG_DIR/$CONFIG_FILE"
+        error "Failed to remove $KEY from $CONFIG_PATH"
         rm -f "$tmpfile"
         return 1
     fi
 
     # Replace the original config file with the modified one
-    mv "$tmpfile" "$CONFIG_DIR/$CONFIG_FILE"
+    mv "$tmpfile" "$CONFIG_PATH"
 
-    debug "Removed $KEY from $CONFIG_DIR/$CONFIG_FILE"
+    debug "Removed $KEY from $CONFIG_PATH"
     return 0
 }
-#!/bin/bash
+CONVERSATIONS_FILE=$(get_config conversations.file)
+init_conversations() {
+    if [ ! -f "$CONVERSATIONS_FILE" ]; then
+        echo '{"conversations": {}}' > "$CONVERSATIONS_FILE"
+    fi
+}
 
+generate_conversation_id() {
+    echo "conv_$(date +%s)_$(openssl rand -hex 4)"
+}
+
+create_new_conversation() {
+    local model="$1"
+    local system_prompt="$2"
+    local conv_id=$(generate_conversation_id)
+    
+    local tmpfile=$(mktemp)
+    
+    jq --arg id "$conv_id" \
+       --arg model "$model" \
+       --arg system "$system_prompt" \
+       --arg timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+       '.conversations[$id] = {
+           "metadata": {
+               "created_at": $timestamp,
+               "model": $model,
+               "system_prompt": $system
+           },
+           "messages": []
+       }' "$CONVERSATIONS_FILE" > "$tmpfile" && mv "$tmpfile" "$CONVERSATIONS_FILE"
+    
+    echo "$conv_id"
+}
+
+save_message() {
+    local conv_id="$1"
+    local role="$2"
+    local content="$3"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    local tmpfile=$(mktemp)
+    
+    jq --arg id "$conv_id" \
+       --arg role "$role" \
+       --arg content "$content" \
+       --arg timestamp "$timestamp" \
+       '.conversations[$id].messages += [{
+           "timestamp": $timestamp,
+           "role": $role,
+           "content": $content
+       }]' "$CONVERSATIONS_FILE" > "$tmpfile" && mv "$tmpfile" "$CONVERSATIONS_FILE"
+}
+
+get_conversation_history() {
+    local conv_id="$1"
+    local count=${2:-10}
+    
+    if [ -z "$conv_id" ]; then
+        # List all conversations with their metadata
+        jq -r '.conversations | to_entries[] | "\(.key): \(.value.metadata.model) (\(.value.metadata.created_at))"' "$CONVERSATIONS_FILE"
+    else
+        # Show specific conversation details
+        jq -r --arg id "$conv_id" '
+            .conversations[$id] | 
+            "Conversation: \($id)\n" +
+            "Model: \(.metadata.model)\n" +
+            "System Prompt: \(.metadata.system_prompt)\n" +
+            "Created: \(.metadata.created_at)\n" +
+            "\nMessages:\n" +
+            (.messages[-($count|tonumber):] | .[] | "[\(.timestamp)] \(.role): \(.content)")
+        ' "$CONVERSATIONS_FILE"
+    fi
+}
 send_json_to_api() {
-    in_box
-    content="$*"
-    model_endpoint=$(get_config models.openrouter.model_endpoint)
-    OPENROUTER_API_KEY=$(get_config models.openrouter.api_key)
-    curl -sS --no-buffer -X POST "$model_endpoint" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-    -d "$content" | while IFS= read -r line; do
-            # Save raw JSON to file
-            # echo $line >> output.txt
-            line=$(echo "$line" | sed 's/^data: //')
+    model_endpoint=$1 #(get_config models.openrouter.model_endpoint)
+    OPENROUTER_API_KEY=$2 #(get_config models.openrouter.api_key)
+    content="$3"
+    conv_id=$4
+    full_response=""
+    max_retries=$(get_config max_retries)
+    local retry_count=0
+    code="ERROR"
 
+    while [ $retry_count -lt $max_retries ]; do
+
+        (
+        # mkfifo myfifo  # Create a named pipe (FIFO)
+        # trap "rm -f myfifo" EXIT  # Ensure cleanup
+        spinner
+        curl -sS --no-buffer -X POST "$model_endpoint" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+        -w "\nCODE: %{http_code}\n" -d "$content" | while IFS= read -r line; do
+            #TODO: if line starts with "data: " start recording until blank line. then handle message
+
+            line=$(echo "$line" | sed 's/^data: //')
             # Skip empty lines
             [[ -z "$line" ]] && continue
             [[ "$line" == ": OPENROUTER PROCESSING" ]] && continue
-            [[ "$line" == "[DONE]" ]] && break
+            if [[ "$line" == "[DONE]" ]]; then
+                if [[ -n $buffer ]]; then
+                    error "ERROR, Buffer is $buffer"
+                    return 1
+                fi 
+                continue
+            fi
+            if [[ "$line" == "CODE: "* ]]; then
+                code=$(echo "$line" | sed 's/^CODE: //')
+                if [ "$SPINNER_ON" -eq 1 ]; then
+                    spinner
+                fi
+                exit $code
+            fi
 
             # Append new data to buffer
             buffer+="$(printf "%s" "$line")"
             
             # Check if we have a full JSON object (ends with } or [DONE])
             if [[ "$line" == *"}" ]]; then
-                # Try parsing JSON, otherwise print an error
                 if echo "$buffer" | jq empty 2>/dev/null; then
                     content=$(echo "$buffer" | jq -r '.choices[0].delta.content // empty')
-                    if [[ ! $content == "" ]]; then
-                        in_box "$content"  # Print to terminal
-                    else 
-                        in_box #$buffer
+                    if [ "$SPINNER_ON" -eq 1 ]; then
+                        spinner
                     fi
-                    # If the response signals stop, break the loop
-                    # finish_reason=$(echo "$buffer" | jq -r '.choices[0].finish_reason // empty')
-                    # [[ "$finish_reason" == "stop" ]] && continue
+                    if [[ ! $content == "" ]]; then
+                        in_box "$content"
+                        full_response+="$content"
+                    else
+                        # Finished the response, close the box
+                        [[ -n $conv_id ]] && save_message "$conv_id" "assistant" "$full_response"
+                        in_box
+                    fi
                 else
-                    error "Invalid JSON received: $buffer" #>>error.log
+                    save_message "$conv_id" "system" "Error: Invalid JSON response"
+                    error "Invalid JSON received: $buffer"
                 fi
-
-                # Reset buffer after processing a full JSON object
                 buffer=""
-                # echo P$position,$line
             fi
         done
-    if [[ -n $buffer ]]; then
-        error "ERROR, Buffer is $buffer"
-    fi
-    return
+        ) || http_code=$?
+        # rm -f myfifo
+
+        case $http_code in
+            200)
+                debug "HTTP 200 OK"
+                return 0
+                ;;
+            401)
+                save_message "$conv_id" "system" "Error: Invalid API key"
+                error "Authentication failed. Please check your API key."
+                return 1
+                ;;
+            429)
+                if [ $retry_count -lt $((max_retries-1)) ]; then
+                    save_message "$conv_id" "system" "Rate limit exceeded, retrying..."
+                    error "Rate limit exceeded, retrying..."
+                    sleep $((2 ** retry_count))
+                    ((retry_count++))
+                    continue
+                else
+                    save_message "$conv_id" "system" "Error: Rate limit exceeded"
+                    error "Rate limit exceeded after $max_retries retries"
+                    return 1
+                fi
+                ;;
+            500|502|503|504)
+                if [ $retry_count -lt $((max_retries-1)) ]; then
+                    save_message "$conv_id" "system" "Server error, retrying..."
+                    error "Server error, retrying..."
+                    sleep $((2 ** retry_count))
+                    ((retry_count++))
+                    continue
+                else
+                    save_message "$conv_id" "system" "Error: Server error after multiple retries"
+                    error "Server error after $max_retries retries"
+                    return 1
+                fi
+                ;;
+            *)
+                save_message "$conv_id" "system" "Error: Unexpected response (HTTP $http_code)"
+                error "Unexpected response (HTTP $http_code): $body"
+                return 1
+                ;;
+        esac
+    done
+    
 }
 
 send_message() {
-    message_to_send="$*"
-    selected_model=$(get_config models.$(get_config models.active))
-    model=$(echo "$selected_model" | jq '.model')
-    stream=$(echo "$selected_model" | jq '.stream')
-    content=$(jq --argjson model "$model" '. + {model: $model}' <<< "$(get_config prompt_template)")
-    content=$(jq --argjson stream "$stream" '. + {stream: $stream}' <<< "$content")
-    content=$(printf "$content" "$message_to_send")
-    # echo "" > output.txt
-    send_json_to_api "$content"
-    # Try to send
-    # Wait for response
-    # If response is not received in time, try again 3 times or exit
-    # If response is received, return the response
-    echo "TODO"
+    local prompt="$1"
+    local piped_input="$2"
+    local conv_id="$3"
+    local message_to_send="$prompt"
+
+    if [[ -n $piped_input ]]; then
+        message_to_send+="\nReference: $piped_input"
+    fi
+
+    # Create new conversation if no ID provided
+    if [ -z "$conv_id" ]; then
+        # Get model and system prompt from config
+        selected_model=$(get_config providers.$(get_config providers.active))
+        model=$(echo "$selected_model" | jq '.model')
+        api_key=$(get_config_from_json_string api_key "$selected_model")
+        model_endpoint=$(get_config_from_json_string model_endpoint "$selected_model")
+
+        local system_prompt=$(get_config system_prompt)
+
+        dynamic_prompt="You are located at \"$0\" within SHELL:${SHELL}. your version is ${VERSION}. The user is using \"$UNIX_NAME\" and specifically distribution \"$DISTRO_INFO\". The users username is \"$USER\" with home \"$HOME\". You must always use LANG $LANG and LC_TIME $LC_TIME."
+        system_prompt+="\n$dynamic_prompt"
+        conv_id=$(create_new_conversation "$model" "$system_prompt")
+
+        debug "Getting prompt template for $model"
+        template=$(get_config prompt_template)
+        debug "inserting model to template"
+        content=$(jq --argjson model "$model" '. + {model: $model}' <<< "$template")
+        debug "inserting system prompt and text to template"
+        content=$(printf "$content" "$system_prompt" "$message_to_send")
+        debug "SELECTED MODEL: $selected_model"
+
+    
+    fi
+    # Save user message
+    save_message "$conv_id" "user" "$message_to_send"
+
+    send_json_to_api "$model_endpoint" "$api_key" "$content" "$conv_id"    # | while read -r response; do
+
+    # Return conversation ID for future reference
+    debug "Conversation: $conv_id"
 }
 
 installation_required() {
@@ -513,7 +773,7 @@ stop_terminal_recording() {
 
 handle_prompt() {
     echo "Handling prompt: $@"
-    exit 0
+    # exit 0
 }
 
 process_arguments() {
@@ -548,11 +808,13 @@ process_arguments() {
 }
 
 main() {
-    debug "Running from $0"
+    debug "Running from $0, $@"
 
     if installation_required; then
         debug "Installation is required!"
         do_install "$@"
+    else
+        debug "Already installed."
     fi
 
     load_config
@@ -561,23 +823,27 @@ main() {
         debug "Update is needed!"
         do_update "$@"
     fi
+    
+    init_conversations
 
     process_arguments "$@"
+    if [ -p /dev/stdin ]; then
+        # piped_input="$(</dev/stdin)"
+        piped_input="$(cat -)"
+    fi
 
     # if user added prompt, handle it
     if [ -n "$1" ]; then
         handle_prompt "$@"
+        send_message "$*" "$piped_input"
+    elif [ -n "$piped_input" ]; then
+        handle_prompt "$(cat -)"
     else
         echo "Start Menu/Session"
-    fi
-
-    # update_config "check.me" "{\"hello\": \"world\"}"
-    # echo "Check is : $(get_config check.me)"
-    # remove_config "check"
-
-    send_message hello, who are you? answer in 2 sentenses please.
-    # load_history
-    
+        update_config "check.me" "{\"hello\": \"world\"}"
+        echo "Check is : $(get_config check.me)"
+        remove_config "check"
+    fi    
 }
 
 main "$@"

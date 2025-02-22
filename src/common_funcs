@@ -59,15 +59,17 @@ declare -r COLOR_RESET='\033[0m'
 # =====================================
 # Function to draw into the box
 in_box() {
-    if [ "$#" -eq 0 ] && [ "$box_open" -eq 1 ]; then  # close box
-        # Close the box
-        if [ $position -gt 0 ]; then
-            spaces_in_line=$(( BOX_WIDTH_TEXT - position))
-            printf "%-${spaces_in_line}s │\n" " "
+    if [ "$#" -eq 0 ]; then
+        if [ "$box_open" -eq 1 ]; then  # close box
+            # Close the box
+            if [ $position -gt 0 ]; then
+                spaces_in_line=$(( BOX_WIDTH_TEXT - position))
+                printf "%-${spaces_in_line}s │\n" " "
+            fi
+            printf "${COLOR_BLUE}└%${BOX_WIDTH}s┘\n" "" | tr ' ' '─'
+            printf "${COLOR_RESET}" # Reset colors
+            box_open=0
         fi
-        printf "${COLOR_BLUE}└%${BOX_WIDTH}s┘\n" "" | tr ' ' '─'
-        printf "${COLOR_RESET}" # Reset colors
-        box_open=0
         return
     fi
 
@@ -138,3 +140,32 @@ in_box() {
     fi
 }
 # =================================
+
+PROGRESS_ANIM="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+SPINNER_ON=0
+# Start the spinner in the background
+spin() {
+	echo -ne "Thinking..."
+    while :; do
+        for (( i=0; i<${#PROGRESS_ANIM}; i++ )); do
+            sleep 0.1
+            # Print a carriage return (\r) and then the spinner character
+            echo -ne "\r${PROGRESS_ANIM:$i:1}"
+        done
+    done
+}
+spinner() {
+    if [ "$SPINNER_ON" -eq 0 ]; then
+        SPINNER_ON=1
+        spin &
+        spinner_pid=$!
+    else
+        SPINNER_ON=0
+        kill $spinner_pid
+        wait $spinner_pid 2>/dev/null
+        echo -ne "\r "
+        echo -ne "\r"
+    fi
+}
+# =================================
+	

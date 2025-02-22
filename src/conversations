@@ -1,0 +1,73 @@
+CONVERSATIONS_FILE=$(get_config conversations.file)
+init_conversations() {
+    if [ ! -f "$CONVERSATIONS_FILE" ]; then
+        echo '{"conversations": {}}' > "$CONVERSATIONS_FILE"
+    fi
+}
+
+generate_conversation_id() {
+    echo "conv_$(date +%s)_$(openssl rand -hex 4)"
+}
+
+create_new_conversation() {
+    local model="$1"
+    local system_prompt="$2"
+    local conv_id=$(generate_conversation_id)
+    
+    local tmpfile=$(mktemp)
+    
+    jq --arg id "$conv_id" \
+       --arg model "$model" \
+       --arg system "$system_prompt" \
+       --arg timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+       '.conversations[$id] = {
+           "metadata": {
+               "created_at": $timestamp,
+               "model": $model,
+               "system_prompt": $system
+           },
+           "messages": []
+       }' "$CONVERSATIONS_FILE" > "$tmpfile" && mv "$tmpfile" "$CONVERSATIONS_FILE"
+    
+    echo "$conv_id"
+}
+
+save_message() {
+    local conv_id="$1"
+    local role="$2"
+    local content="$3"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    local tmpfile=$(mktemp)
+    
+    jq --arg id "$conv_id" \
+       --arg role "$role" \
+       --arg content "$content" \
+       --arg timestamp "$timestamp" \
+       '.conversations[$id].messages += [{
+           "timestamp": $timestamp,
+           "role": $role,
+           "content": $content
+       }]' "$CONVERSATIONS_FILE" > "$tmpfile" && mv "$tmpfile" "$CONVERSATIONS_FILE"
+}
+
+get_conversation_history() {
+    local conv_id="$1"
+    local count=${2:-10}
+    
+    if [ -z "$conv_id" ]; then
+        # List all conversations with their metadata
+        jq -r '.conversations | to_entries[] | "\(.key): \(.value.metadata.model) (\(.value.metadata.created_at))"' "$CONVERSATIONS_FILE"
+    else
+        # Show specific conversation details
+        jq -r --arg id "$conv_id" '
+            .conversations[$id] | 
+            "Conversation: \($id)\n" +
+            "Model: \(.metadata.model)\n" +
+            "System Prompt: \(.metadata.system_prompt)\n" +
+            "Created: \(.metadata.created_at)\n" +
+            "\nMessages:\n" +
+            (.messages[-($count|tonumber):] | .[] | "[\(.timestamp)] \(.role): \(.content)")
+        ' "$CONVERSATIONS_FILE"
+    fi
+}
