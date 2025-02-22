@@ -1,9 +1,18 @@
 
 #!/bin/bash
-# Get the version from the config file
-eval $(head -1 src/config)
 CURR_DIR=$(dirname "$0");
 LATEST_RELEASE=$(git describe --tags --abbrev=0)
+
+# Increment the version
+MAJOR=$(echo $LATEST_RELEASE | cut -d. -f1)
+MINOR=$(echo $LATEST_RELEASE | cut -d. -f2)
+PATCH=$(echo $LATEST_RELEASE | cut -d. -f3)
+NEW_PATCH=$((PATCH + 1))
+VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+
+# Update the config file
+sed -i "1s/.*VERSION=.*/VERSION=\"$VERSION\"/" src/config
+
 # Create the script
 TMP_PATH=$(mktemp)
 SCRIPT_PATH=$CURR_DIR/install

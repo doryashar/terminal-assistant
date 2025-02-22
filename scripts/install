@@ -169,7 +169,7 @@ spinner() {
 }
 # =================================
 	
-VERSION="v1.0.4"
+VERSION="v1.0.5"
 REPO="doryashar/terminal-assistant"
 DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"
