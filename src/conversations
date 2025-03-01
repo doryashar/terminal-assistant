@@ -16,6 +16,9 @@ create_new_conversation() {
     
     local tmpfile=$(mktemp)
     
+    # if conversations file does not exist, create it:
+    init_conversations
+
     jq --arg id "$conv_id" \
        --arg model "$model" \
        --arg system "$system_prompt" \

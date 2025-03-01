@@ -79,10 +79,10 @@ main() {
 
     # if user added prompt, handle it
     if [ -n "$1" ]; then
-        handle_prompt "$@"
+        # handle_prompt "$@"
         send_message "$*" "$piped_input"
     elif [ -n "$piped_input" ]; then
-        handle_prompt "$(cat -)"
+        handle_prompt "$piped_input"
     else
         echo "Start Menu/Session"
         update_config "check.me" "{\"hello\": \"world\"}"

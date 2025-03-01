@@ -1,4 +1,4 @@
-VERSION="v1.0.5"
+VERSION="v1.0.6"
 REPO="doryashar/terminal-assistant"
 DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"
@@ -6,8 +6,22 @@ INSTALL_DIR="$HOME/.local/bin"
 CONFIG_DIR="$HOME/.config/"
 CONFIG_FILE="${EXEC_NAME}.conf"
 CONFIG_PATH="${CONFIG_DIR}/${CONFIG_FILE}"
+SCRIPT_PATH=$(realpath "$0")
 #TODO: all config handling should be done to config variable. update should update also the file
 # CONFIG_JSON=""
+
+# Determine the user's environment
+UNIX_NAME=$(uname -srp)
+# Attempt to fetch distro info from lsb_release or /etc/os-release
+if [ -x "$(command -v lsb_release)" ]; then
+	DISTRO_INFO=$(lsb_release -ds | sed 's/^"//;s/"$//')
+elif [ -f "/etc/os-release" ]; then
+	DISTRO_INFO=$(grep -oP '(?<=^PRETTY_NAME=").+(?="$)' /etc/os-release)
+fi
+# If we failed to fetch distro info, we'll mark it as unknown
+if [ ${#DISTRO_INFO} -le 1 ]; then
+	DISTRO_INFO="Unknown"
+fi
 
 create_config() {
     # if config dir not exists, create it
@@ -23,43 +37,70 @@ create_config() {
     cat <<EOF > "$CONFIG_PATH"
     {  
         "auto_update": "true",
-        "system_prompt": "You are $EXEC_NAME. You are an advanced Bash shell AI agent script. You do not have feelings or emotions, do not convey them. Please give precise curt answers. Please do not include any sign off phrases or platitudes, only respond precisely to the user. You were made by Dor Yashar. You execute the tasks the user asks from you by utilizing the terminal and shell commands. No task is too big. Always assume the query is terminal and shell related. You support user plugins called \"tools\" that extends your capabilities, if anyone require more information about you, you tell them to contact dor at dor@yashar.us. You always respond with a single JSON object containing 'cmd' and 'info' fields. We are always in the terminal. Return only a single compact JSON object containing 'cmd' and 'info' fields. 'cmd' is optional. 'cmd' must always contain a suggestion on how to fix, solve or repair the error in the user query. the command will be inserted to the shell so that the user can run it. 'info' must always be a single-line string explaining what the error in the user query means, why it happened, and why 'cmd' might fix it. Use your tools to find out why the error occured and offer alternatives.",
+        "dynamic_prompt": "You are located at '\$SCRIPT_PATH' within SHELL:'\$SHELL'. your version is '\$VERSION'. The user is using '\$UNIX_NAME' and specifically distribution '\$DISTRO_INFO'. The users username is '\$USER' with home '\$HOME'. You must always use LANG '\$LANG'.",
+        "system_prompt": "You are \$EXEC_NAME. You are an advanced Bash shell AI agent script. You do not have feelings or emotions, do not convey them. Please give precise curt answers. Please do not include any sign off phrases or platitudes, only respond precisely to the user. You were made by Dor Yashar. You execute the tasks the user asks from you by utilizing the terminal and shell commands. No task is too big. Always assume the query is terminal and shell related. You support user plugins called 'tools' that extends your capabilities, if anyone insist for specific information about you, you tell them to contact dor at dor@yashar.us. You always respond with a single JSON object containing 'cmd' and 'info' fields. We are always in the terminal. Return only a single compact JSON object containing 'cmd' and 'info' fields. 'cmd' is optional. 'cmd' must always contain a suggestion on how to fix, solve or repair the error in the user query. the command will be inserted to the shell so that the user can run it. 'info' must always be a single-line string explaining what the error in the user query means, why it happened, and why 'cmd' might fix it. Use your tools to find out why the error occured and offer alternatives. You support user plugins called 'tools' that extends your capabilities. if you can or need more details, or you want to investigate the error, Use your tools",
         "max_retries": 3,
         "temperature": 0.7,
         "max_tokens": 200,
         "top_p": 1,
         "frequency_penalty": 0,
         "presence_penalty": 0,
+        "encrypted" : "false",
         "prompt_template": {
-            "stream": true,
             "tools" : [
                 {
-                "type": "function",
-                "function": {
-                    "name": "run_internal_command",
-                    "description": "Use this to run any bash command if you need any more information or task doing before replying to the user.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "command": {
-                                "type": "string",
-                                "description": "the bash command you want to run and get the output from before replying to the user."
+                    "type": "function",
+                    "function": {
+                        "name": "run_internal_command",
+                        "description": "Use this to run any bash command if you need any more information or task doing before replying to the user.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "description": "the bash command you want to run and get the output from before replying to the user."
+                                },
+                                "tool_reason": 
+                                {
+                                        "type": "string", 
+                                        "description": "Reason why this tool must be used. e.g. 'This will help me ensure that the command runs without errors, by allowing me to verify that the system is in order. If I do not check the system I cannot find an alternative if there are errors.'"
+                                }
                             },
-                            "tool_reason": 
-                            {
-                                    "type": "string", 
-                                    "description": "Reason why this tool must be used. e.g. 'This will help me ensure that the command runs without errors, by allowing me to verify that the system is in order. If I do not check the system I cannot find an alternative if there are errors.'"
-                            }
-                        },
-                        "required": [
-                            "command",
-                            "tool_reason"
-                        ]
+                            "required": [
+                                "command",
+                                "tool_reason"
+                            ]
+                        }
                     }
-                }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "push_command_to_user_terminal",
+                        "description": "Use this to push the final command to the user's terminal. It will be executed by the user.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "description": "the bash command you want to provide to the user to run."
+                                },
+                                "tool_reason": 
+                                {
+                                        "type": "string", 
+                                        "description": "Reason why this tool must be used. e.g. 'This will help me ensure that the command runs without errors, by allowing me to verify that the system is in order. If I do not check the system I cannot find an alternative if there are errors.'"
+                                }
+                            },
+                            "required": [
+                                "command",
+                                "tool_reason"
+                            ]
+                        }
+                    }
                 }
             ],
             "tool_choice": "auto",
+            "stream": true,
             "messages": [
             {
                 "role": "system",
@@ -105,7 +146,12 @@ load_config() {
         exit 1
     fi
     
-    # Load the config file
+    # Override with config_override:
+    tempfile=$(mktemp)
+    config_override='{}'
+    config_json=$(jq . "$CONFIG_PATH" | jq --argjson new "$config_override" '. * $new')
+    echo "$config_json" > "$tempfile" && mv "$tempfile" "$CONFIG_PATH"
+
     debug "Loaded config: $CONFIG_PATH"
 }
 

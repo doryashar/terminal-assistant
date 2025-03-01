@@ -1,0 +1,20 @@
+#!/bin/bash
+# (sleep 3; echo -n "ls -la HELLO" > /dev/tty) 
+# (sleep 1; echo -n "ls -la HELLO" > /dev/pts/0) &
+# (sleep 0.1 ; ./xtool type 'h' && ./xtool type 'e' )&
+# ( sleep 1; printf "%s" "hihi" ) > /proc/$$/fd/0 
+
+push_to_stdin() {
+    TEXT="$*"
+
+    # Loop through each character in the string
+    for ((i = 0; i < ${#TEXT}; i++)); do
+        CHAR="${TEXT:$i:1}"  # Extract single character
+
+        # Send each character using xtool (replace `xtool key` with the correct syntax)
+        ./xtool type "$CHAR"
+
+        # Optional: Add a small delay for a more natural typing effect
+        sleep 0.05
+    done &
+}

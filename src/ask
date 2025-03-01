@@ -1,0 +1,92 @@
+#!/bin/bash
+# Save terminal content to a file
+TUID=${PPID} # Parent PID (the terminal's parent process)
+DATE_ID=$(date '+%Y-%m-%d_%H-%M-%S')
+CAPTURE_HISTORY_LENGTH=10
+COMMAND_HISTORY_LENGTH=10
+HISTORY_COMMANDS=$(history | tail -n ${COMMAND_HISTORY_LENGTH})
+
+show_help() {
+    echo "Usage: $0 [OPTION]"
+    echo ""
+    echo "Save and manage terminal session content."
+    echo ""
+    echo "Options:"
+    echo "  --help           Show this help message"
+    echo "  stop             Stop the current terminal session recording"
+    echo ""
+    echo "If the script is run without an argument, it will start recording the session."
+    echo "If the session history file is missing, the script will terminate the recording."
+}
+# Check if the script is called with the "help" argument
+if [ "$1" == "--help" ]; then
+    show_help
+    exit 0
+fi
+
+debug() {
+    if [ -n "$DEBUG" ]; then
+        echo "Debug: $1"
+    fi
+}
+
+# Function to stop the terminal session recording
+stop_recording() {
+    # Find the script process for the specific terminal session
+    # if the variable doesnt exist, set it to the filename
+    TERMINAL_CONTENT_FILENAME=${TERMINAL_CONTENT_FILENAME:-/tmp/terminal_output_${TUID}.txt}
+    SCRIPT_PID=$(pgrep -f "script -q -f ${TERMINAL_CONTENT_FILENAME}")
+    # SCRIPT_PID_=$(pgrep -f "$(basename "$0")")
+
+    if [ -n "$SCRIPT_PID" ]; then
+        PARENT_SCRIPT_PID=$(ps -o ppid= -p $SCRIPT_PID)
+        debug "Script PID for $0: $SCRIPT_PID, Parent PID: $PARENT_SCRIPT_PID"
+        # Kill the specific script process
+        rm -f "${TERMINAL_CONTENT_FILENAME}" &
+        kill "$SCRIPT_PID"
+        debug "Background terminal recording process for session $TUID has been terminated."
+    else
+        debug "No background script process found for this terminal session."
+    fi
+
+    debug "Terminal recording stopped."
+    exit 0
+}
+
+# Check if the script is called with the "stop" argument
+if [ "$1" == "stop" ]; then
+    stop_recording  # Call the function to stop the recording
+fi
+
+# If the the variable exists and file exists, grab the history from the file otherwise start a new recording
+if [ -n "$TERMINAL_CONTENT_FILENAME" ]; then
+    if [ -f "$TERMINAL_CONTENT_FILENAME" ]; then
+        HISTORY=$(tail -n ${CAPTURE_HISTORY_LENGTH} ${TERMINAL_CONTENT_FILENAME})
+        debug "HISTORY (${CAPTURE_HISTORY_LENGTH} lines of ${TERMINAL_CONTENT_FILENAME}): $HISTORY"
+    else
+        # If the history file is missing, find and kill the background `script` process for the terminal
+        stop_recording
+    fi
+else 
+    export TERMINAL_CONTENT_FILENAME="/tmp/terminal_output_${TUID}.txt"
+    debug "Terminal recording started in $TERMINAL_CONTENT_FILENAME."
+    script -q -f "$TERMINAL_CONTENT_FILENAME" ; 
+    debug "Done recording."
+    
+    # if the script isnt sourced, kill the parent shell
+    if [ ! "$$" = "$PPID" ] && [ -z "$ASK_SOFT_KILL" ]; then
+        debug "Script is executed normally - killing parent shell"
+        kill -9 $(ps -o ppid= -p $$)
+    # else
+    #     echo "Script is sourced"
+    fi
+fi
+
+# # Use `tput` to grab the terminal's screen buffer and save to file
+# tput smcup  # Save the current screen buffer
+# tput rmcup  # Restore the saved buffer
+
+# # Save the current content of the terminal (screen buffer) to the file
+# cat /dev/tty > "$FILENAME"
+
+# echo "Terminal content saved to $FILENAME"

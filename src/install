@@ -1,5 +1,5 @@
 installation_required() {
-    if [ "$0" == "$INSTALL_DIR/$EXEC_NAME" ]; then
+    if [ "$SCRIPT_PATH" == "$INSTALL_DIR/$EXEC_NAME" ]; then
         return 1
     # Check if already installed
     elif [ -f "$INSTALL_DIR/$EXEC_NAME" ]; then

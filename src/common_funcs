@@ -1,14 +1,17 @@
 #!/bin/bash
 info()  {
+    in_box
     echo "[INFO] $@"
 }
 debug() {
+    in_box
     if [ "$DEBUG" -eq 1 ]; then
         echo "[DEBUG] $@"
     fi
 }
 error() {
-    echo "[ERROR] $@" >&2
+    in_box
+    echo "${COLOR_RED}[ERROR] $@ ${COLOR_RESET}" >&2
 }
 
 prompt_user() {
@@ -55,6 +58,7 @@ declare -r COLOR_GREEN='\033[0;32m'
 declare -r COLOR_YELLOW='\033[0;33m'
 declare -r COLOR_BLUE='\033[0;34m'
 declare -r COLOR_RESET='\033[0m'
+declare -r COLOR_RED='\033[0;31m'
 
 # =====================================
 # Function to draw into the box
@@ -145,7 +149,7 @@ PROGRESS_ANIM="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 SPINNER_ON=0
 # Start the spinner in the background
 spin() {
-	echo -ne "Thinking..."
+	echo -ne " Thinking..."
     while :; do
         for (( i=0; i<${#PROGRESS_ANIM}; i++ )); do
             sleep 0.1
@@ -168,4 +172,36 @@ spinner() {
     fi
 }
 # =================================
-	
+
+# KEY="mysecretpassword"  # Change this to a strong password
+# IV="1234567890abcdef"   # Change this to a 16-byte IV
+
+encode_encrypt() {
+    local plaintext="$1"
+    local encoded
+    local encrypted
+
+    encoded=$(echo -n "$plaintext" | base64)
+    encrypted=$(echo -n "$encoded" | openssl enc -aes-256-cbc -e -base64 -K "$(echo -n "$KEY" | xxd -p)" -iv "$(echo -n "$IV" | xxd -p)")
+
+    echo "$encrypted"
+}
+
+decrypt_decode() {
+    local encrypted="$1"
+    local decoded
+    local decrypted
+
+    decrypted=$(echo -n "$encrypted" | openssl enc -aes-256-cbc -d -base64 -K "$(echo -n "$KEY" | xxd -p)" -iv "$(echo -n "$IV" | xxd -p)")
+    decoded=$(echo -n "$decrypted" | base64 --decode)
+
+    echo "$decoded"
+}
+
+# # Example Usage
+# original="Hello, World!"
+# encrypted=$(encode_encrypt "$original")
+# echo "Encrypted: $encrypted"
+
+# decrypted=$(decrypt_decode "$encrypted")
+# echo "Decrypted: $decrypted"
