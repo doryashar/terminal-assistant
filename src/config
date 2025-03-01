@@ -1,4 +1,4 @@
-VERSION="v1.0.6"
+VERSION="v1.0.7"
 REPO="doryashar/terminal-assistant"
 DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"

@@ -205,7 +205,7 @@ decrypt_decode() {
 
 # decrypted=$(decrypt_decode "$encrypted")
 # echo "Decrypted: $decrypted"
-VERSION="v1.0.6"
+VERSION="v1.0.7"
 REPO="doryashar/terminal-assistant"
 DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"
@@ -698,22 +698,21 @@ send_json_to_api() {
     local http_code=1
 
     while [ $retry_count -lt $max_retries ]; do
-        (
+        spinner
+        while IFS= read -r line; do
+            parse_incoming_line "$line" #|| break
+        done < <(
         # mkfifo myfifo  # Create a named pipe (FIFO)
         # trap "rm -f myfifo" EXIT  # Ensure cleanup
-        spinner
         curl -sS --no-buffer -X POST "$model_endpoint" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-        -w "\nCODE: %{http_code}\n" -d "$content" | while IFS= read -r line; do
-            parse_incoming_line "$line" #|| break
-        done
-        )  || http_code=$?
-        
-        handle_http_code $http_code
-        return_or_retry="$?"
-        [[ $return_or_retry -eq 2 ]] && continue
-        return $return_or_retry
+        -w "\nCODE: %{http_code}\n" -d "$content")  
+
+        # handle_http_code $http_code
+        # return_or_retry="$?"
+        # [[ $return_or_retry -eq 2 ]] && continue
+        # return $return_or_retry
     done
 }
 
