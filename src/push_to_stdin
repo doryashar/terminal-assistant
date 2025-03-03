@@ -3,18 +3,25 @@
 # (sleep 1; echo -n "ls -la HELLO" > /dev/pts/0) &
 # (sleep 0.1 ; ./xtool type 'h' && ./xtool type 'e' )&
 # ( sleep 1; printf "%s" "hihi" ) > /proc/$$/fd/0 
+xdotool_exists=$(command -v xdotool)
+if [ -n "$xdotool_exists" ]; then
+    xtool="xdotool"
+else
+    xtool="./xtool"
+fi
 
 push_to_stdin() {
     TEXT="$*"
-
+    # if xdotool exists, use it, otherwise use xtool
+    
     # Loop through each character in the string
     for ((i = 0; i < ${#TEXT}; i++)); do
         CHAR="${TEXT:$i:1}"  # Extract single character
 
         # Send each character using xtool (replace `xtool key` with the correct syntax)
-        ./xtool type "$CHAR"
+        $xtool type "$CHAR"
 
         # Optional: Add a small delay for a more natural typing effect
-        sleep 0.05
-    done &
+        sleep 0.02
+    done
 }

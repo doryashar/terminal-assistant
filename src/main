@@ -53,7 +53,15 @@ process_arguments() {
 }
 
 main() {
-    debug "Running from $0, $@"
+    term_buffer=$(get_terminal_buffer) || start_recording
+
+    #     if [ $? -eq 0 ]; then
+    # else
+    #     debug "Starting terminal recording..."
+    #     start_recording
+    # fi
+
+    debug "Running from $0"
 
     if installation_required; then
         debug "Installation is required!"
@@ -79,7 +87,6 @@ main() {
 
     # if user added prompt, handle it
     if [ -n "$1" ]; then
-        # handle_prompt "$@"
         send_message "$*" "$piped_input"
     elif [ -n "$piped_input" ]; then
         handle_prompt "$piped_input"

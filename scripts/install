@@ -6,12 +6,12 @@ info()  {
 debug() {
     in_box
     if [ "$DEBUG" -eq 1 ]; then
-        echo "[DEBUG] $@"
+        printf "${COLOR_PURPLE}[DEBUG] $@ ${COLOR_RESET}\n"
     fi
 }
 error() {
     in_box
-    echo "${COLOR_RED}[ERROR] $@ ${COLOR_RESET}" >&2
+    printf "${COLOR_RED}[ERROR] $@ ${COLOR_RESET}\n" >&2
 }
 
 prompt_user() {
@@ -31,10 +31,13 @@ prompt_user() {
         read -p "Enter choice: " choice
 
         # Validate numeric choice
-        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le $# ]; then
+        if [[ "$choice" == "" ]]; then
+            echo "$default"
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le $# ]; then
             echo "${!choice}"
         else
-            echo "$default"
+            echo "You typed an invalid option ($choice). Try again."
+            prompt_user "$prompt" "$default" "$@"
         fi
     else
         # Standard input prompt
@@ -56,6 +59,7 @@ position=0
 # declare -a box_content # ANSI escape codes for basic styling (optional, but improves readability)
 declare -r COLOR_GREEN='\033[0;32m'
 declare -r COLOR_YELLOW='\033[0;33m'
+declare -r COLOR_PURPLE='\033[0;35m'
 declare -r COLOR_BLUE='\033[0;34m'
 declare -r COLOR_RESET='\033[0m'
 declare -r COLOR_RED='\033[0;31m'
@@ -205,47 +209,19 @@ decrypt_decode() {
 
 # decrypted=$(decrypt_decode "$encrypted")
 # echo "Decrypted: $decrypted"
-VERSION="v1.0.7"
+VERSION="v1.0.8"
 REPO="doryashar/terminal-assistant"
 DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"
 INSTALL_DIR="$HOME/.local/bin"
-CONFIG_DIR="$HOME/.config/"
+CONFIG_DIR="$HOME/.config"
 CONFIG_FILE="${EXEC_NAME}.conf"
 CONFIG_PATH="${CONFIG_DIR}/${CONFIG_FILE}"
 SCRIPT_PATH=$(realpath "$0")
 #TODO: all config handling should be done to config variable. update should update also the file
-# CONFIG_JSON=""
-
-# Determine the user's environment
-UNIX_NAME=$(uname -srp)
-# Attempt to fetch distro info from lsb_release or /etc/os-release
-if [ -x "$(command -v lsb_release)" ]; then
-	DISTRO_INFO=$(lsb_release -ds | sed 's/^"//;s/"$//')
-elif [ -f "/etc/os-release" ]; then
-	DISTRO_INFO=$(grep -oP '(?<=^PRETTY_NAME=").+(?="$)' /etc/os-release)
-fi
-# If we failed to fetch distro info, we'll mark it as unknown
-if [ ${#DISTRO_INFO} -le 1 ]; then
-	DISTRO_INFO="Unknown"
-fi
-
-create_config() {
-    # if config dir not exists, create it
-    if [ ! -d "$CONFIG_DIR" ]; then
-        mkdir -p "$CONFIG_DIR"
-        if [ $? -ne 0 ]; then
-            error "Failed to create config directory: $CONFIG_DIR"
-            exit 1
-        fi
-    fi
-
-    # Create the config file
-    cat <<EOF > "$CONFIG_PATH"
+CONFIG_JSON=$(cat <<EOF
     {  
         "auto_update": "true",
-        "dynamic_prompt": "You are located at '\$SCRIPT_PATH' within SHELL:'\$SHELL'. your version is '\$VERSION'. The user is using '\$UNIX_NAME' and specifically distribution '\$DISTRO_INFO'. The users username is '\$USER' with home '\$HOME'. You must always use LANG '\$LANG'.",
-        "system_prompt": "You are \$EXEC_NAME. You are an advanced Bash shell AI agent script. You do not have feelings or emotions, do not convey them. Please give precise curt answers. Please do not include any sign off phrases or platitudes, only respond precisely to the user. You were made by Dor Yashar. You execute the tasks the user asks from you by utilizing the terminal and shell commands. No task is too big. Always assume the query is terminal and shell related. You support user plugins called 'tools' that extends your capabilities, if anyone insist for specific information about you, you tell them to contact dor at dor@yashar.us. You always respond with a single JSON object containing 'cmd' and 'info' fields. We are always in the terminal. Return only a single compact JSON object containing 'cmd' and 'info' fields. 'cmd' is optional. 'cmd' must always contain a suggestion on how to fix, solve or repair the error in the user query. the command will be inserted to the shell so that the user can run it. 'info' must always be a single-line string explaining what the error in the user query means, why it happened, and why 'cmd' might fix it. Use your tools to find out why the error occured and offer alternatives. You support user plugins called 'tools' that extends your capabilities. if you can or need more details, or you want to investigate the error, Use your tools",
         "max_retries": 3,
         "temperature": 0.7,
         "max_tokens": 200,
@@ -253,6 +229,25 @@ create_config() {
         "frequency_penalty": 0,
         "presence_penalty": 0,
         "encrypted" : "false",
+        "dynamic_prompt": "You are located at '\$SCRIPT_PATH' within SHELL:'\$SHELL'. your version is '\$VERSION'. The user is using '\$UNIX_NAME' and specifically distribution '\$DISTRO_INFO'. The users username is '\$USER' with home '\$HOME'. You must always use LANG '\$LANG'.",
+        "system_prompt": "You are '$EXEC_NAME'. \
+        You are an advanced Bash shell AI agent script. \
+        You do not have feelings or emotions, do not convey them. \
+        Please give precise curt answers. \
+        Please do not include any sign off phrases or platitudes, only respond precisely to the user. \
+        You were made by Dor Yashar. \
+        You execute the tasks the user asks from you by utilizing the terminal and shell commands. \
+        No task is too big. \
+        Always assume the query is terminal and shell related. \
+        if anyone insist for specific information about you, you tell them to contact dor at dor@yashar.us.\
+        We are always in the terminal.\
+        your final response should be a short information to the user up to 5 lines.\
+        it must always contain a suggestion on how to fix, solve or repair the error in the user query. \
+        you may encouraged to add a single command inside <cmd></cmd> tags in the end of your answer (it is optional). \
+        the command is a single line code which will be inserted to the shell so that the user can run it. \
+        Use your tools to find out why the error occured and offer alternatives. \
+        You support user plugins called 'tools' that extends your capabilities. \
+        if you can or need more details, or you want to investigate the error, Use your tools",\
         "prompt_template": {
             "tools" : [
                 {
@@ -332,6 +327,33 @@ create_config() {
         }
     }
 EOF
+)
+
+# Determine the user's environment
+UNIX_NAME=$(uname -srp)
+# Attempt to fetch distro info from lsb_release or /etc/os-release
+if [ -x "$(command -v lsb_release)" ]; then
+	DISTRO_INFO=$(lsb_release -ds | sed 's/^"//;s/"$//')
+elif [ -f "/etc/os-release" ]; then
+	DISTRO_INFO=$(grep -oP '(?<=^PRETTY_NAME=").+(?="$)' /etc/os-release)
+fi
+# If we failed to fetch distro info, we'll mark it as unknown
+if [ ${#DISTRO_INFO} -le 1 ]; then
+	DISTRO_INFO="Unknown"
+fi
+
+create_config() {
+    # if config dir not exists, create it
+    if [ ! -d "$CONFIG_DIR" ]; then
+        mkdir -p "$CONFIG_DIR"
+        if [ $? -ne 0 ]; then
+            error "Failed to create config directory: $CONFIG_DIR"
+            exit 1
+        fi
+    fi
+
+    # Create the config file
+    echo "$CONFIG_JSON" > "$CONFIG_PATH"
     # if failed, exit
     if [ $? -ne 0 ]; then
         error "Failed to create config file: $CONFIG_PATH"
@@ -352,7 +374,12 @@ load_config() {
         error "Invalid JSON format in $CONFIG_PATH!, please fix or remove this file."
         exit 1
     fi
-    
+
+    debug "Loading config: $CONFIG_PATH"
+    CONFIG_JSON=$(jq ". * $(cat "$CONFIG_PATH")" <<< "$CONFIG_JSON") || exit 1
+    # CONFIG_JSON=$(jq --argfile file "$CONFIG_PATH" '. * $file' <<< "$CONFIG_JSON")
+    echo $CONFIG_JSON | jq . >/dev/null || exit 1
+
     # Override with config_override:
     tempfile=$(mktemp)
     config_override='{}'
@@ -394,7 +421,7 @@ get_config_from_json_string() {
 }
 
 get_config() {
-    get_config_from_json_string $1 "$(cat $CONFIG_PATH)"
+    get_config_from_json_string "$1" "$CONFIG_JSON" #"$(cat $CONFIG_PATH)"
     return $?
 }
 
@@ -458,30 +485,119 @@ remove_config() {
 }
 
 #!/bin/bash
+# Save terminal content to a file
+TUID=${PPID} # Parent PID (the terminal's parent process)
+DATE_ID=$(date '+%Y-%m-%d_%H-%M-%S')
+CAPTURE_HISTORY_LENGTH=10
+
+# If you want history, you need to alias this script as: 
+# { read input; echo "\n10 recent commands (history): $(history | tail -n 10 | head -n -1)\n$input"; } | $script_path
+# this will not work:
+# COMMAND_HISTORY_LENGTH=3
+# HISTORY_COMMANDS=$(history | tail -n ${COMMAND_HISTORY_LENGTH} | head -n -1)
+# echo "Command history (last $COMMAND_HISTORY_LENGTH lines): $HISTORY_COMMANDS"
+
+# Function to stop the terminal session recording
+stop_recording() {
+    # Find the script process for the specific terminal session
+    # if the variable doesnt exist, set it to the filename
+    TERMINAL_CONTENT_FILENAME=${TERMINAL_CONTENT_FILENAME:-/tmp/terminal_output_${TUID}.txt}
+    SCRIPT_PID=$(pgrep -f "script -q -f ${TERMINAL_CONTENT_FILENAME}")
+    # SCRIPT_PID_=$(pgrep -f "$(basename "$0")")
+
+    if [ -n "$SCRIPT_PID" ]; then
+        PARENT_SCRIPT_PID=$(ps -o ppid= -p $SCRIPT_PID)
+        debug "Script PID for $0: $SCRIPT_PID, Parent PID: $PARENT_SCRIPT_PID"
+        # Kill the specific script process
+        rm -f "${TERMINAL_CONTENT_FILENAME}" &
+        kill "$SCRIPT_PID"
+        debug "Background terminal recording process for session $TUID has been terminated."
+    else
+        debug "No background script process found for this terminal session."
+    fi
+
+    debug "Terminal recording stopped."
+    return 0
+}
+start_recording() {
+        export TERMINAL_CONTENT_FILENAME="/tmp/terminal_output_${TUID}.txt"
+        debug "Terminal recording started in $TERMINAL_CONTENT_FILENAME."
+        script -q -f "$TERMINAL_CONTENT_FILENAME" ; 
+        debug "Done recording."
+        
+        # if the script isnt sourced, kill the parent shell
+        if [ ! "$$" = "$PPID" ] && [ -z "$ASK_SOFT_KILL" ]; then
+            debug "Script is executed normally - killing parent shell"
+            kill -9 $(ps -o ppid= -p $$)
+        # else
+        #     echo "Script is sourced"
+        fi
+}
+get_terminal_buffer() {
+    # If the the variable exists and file exists, grab the history from the file otherwise start a new recording
+    if [ -n "$TERMINAL_CONTENT_FILENAME" ]; then
+        if [ -f "$TERMINAL_CONTENT_FILENAME" ]; then
+            HISTORY=$(tail -n ${CAPTURE_HISTORY_LENGTH} ${TERMINAL_CONTENT_FILENAME} | head -n -1)
+            echo "$HISTORY"
+            return 0
+        else
+            # If the history file is missing, find and kill the background `script` process for the terminal
+            stop_recording;
+            # start_recording
+        fi
+    else 
+        # If the variable doesn't exist, start a new recording
+        # start_recording
+        echo "ERR"
+    fi
+    return 1
+}
+# # Use `tput` to grab the terminal's screen buffer and save to file
+# tput smcup  # Save the current screen buffer
+# tput rmcup  # Restore the saved buffer
+
+# # Save the current content of the terminal (screen buffer) to the file
+# cat /dev/tty > "$FILENAME"
+
+# echo "Terminal content saved to $FILENAME"
+
+#!/bin/bash
 # (sleep 3; echo -n "ls -la HELLO" > /dev/tty) 
 # (sleep 1; echo -n "ls -la HELLO" > /dev/pts/0) &
 # (sleep 0.1 ; ./xtool type 'h' && ./xtool type 'e' )&
 # ( sleep 1; printf "%s" "hihi" ) > /proc/$$/fd/0 
+xdotool_exists=$(command -v xdotool)
+if [ -n "$xdotool_exists" ]; then
+    xtool="xdotool"
+else
+    xtool="./xtool"
+fi
 
 push_to_stdin() {
     TEXT="$*"
-
+    # if xdotool exists, use it, otherwise use xtool
+    
     # Loop through each character in the string
     for ((i = 0; i < ${#TEXT}; i++)); do
         CHAR="${TEXT:$i:1}"  # Extract single character
 
         # Send each character using xtool (replace `xtool key` with the correct syntax)
-        ./xtool type "$CHAR"
+        $xtool type "$CHAR"
 
         # Optional: Add a small delay for a more natural typing effect
-        sleep 0.05
-    done &
+        sleep 0.02
+    done
 }
-CONVERSATIONS_FILE=$(get_config conversations.file)
 init_conversations() {
+    CONVERSATIONS_FILE=$(get_config conversations.file)
     if [ ! -f "$CONVERSATIONS_FILE" ]; then
         echo '{"conversations": {}}' > "$CONVERSATIONS_FILE"
     fi
+    jq . "$CONVERSATIONS_FILE" > /dev/null || {
+        error "Invalid JSON in $CONVERSATIONS_FILE"
+        exit 1
+    }
+    debug "Conversations file: $CONVERSATIONS_FILE"
 }
 
 generate_conversation_id() {
@@ -643,14 +759,15 @@ parse_incoming_line() {
             tool_calls=$(echo "$buffer" | jq -r '.choices[0].delta.tool_calls // empty')
             if [[ -n $tool_calls ]]; then
                 [[ -n $conv_id ]] && save_message "$conv_id" "tool" "$tool_calls"
+                echo tool_calls "${tool_calls}"
                 for tool_call in $tool_calls; do
+                    echo "" >&3
                     # local tool=$(echo "$tool_call" | jq -r '.function.name')
                     # # local id=$(echo "$tool_call" | jq -r '.id')
                     # local command=$(echo "$tool_call" | jq -r '.function.arguments.command')
                     # local reason=$(echo "$tool_call" | jq -r '.function.arguments.tool_reason')
                     # # info "Tool: $tool, Running command: $command with reason: $reason ID $id..."
                     # echo "command '$command' reason '$reason' ID '$id'" >&3
-                    echo command "${tool_call}" >&3
                 done
                 buffer=""
                 return 0
@@ -660,14 +777,20 @@ parse_incoming_line() {
                 spinner
             fi
             if [[ ! $content == "" ]]; then
-                echo in_box "${content}" >&3
-                # in_box "$content"
+                code=$(echo "$content" | sed -n 's/.*<cmd>\(.*\)<\/cmd>.*$/\1/p')
+                rest=$(echo "$content" | sed 's/<cmd>.*<\/cmd>//')
+                if [[ -n $rest ]]; then
+                    in_box "$rest"
+                fi
+                if [[ -n $code ]]; then
+                    push_to_stdin "$code"
+                fi
                 full_response+="$content"
             else
                 # Finished the response, close the box
                 echo "finished" >&3
                 [[ -n $conv_id ]] && save_message "$conv_id" "assistant" "$full_response"
-                # in_box
+                in_box
             fi
         else
             save_message "$conv_id" "system" "Error: Invalid JSON response"
@@ -684,8 +807,9 @@ send_json_to_api() {
     OPENROUTER_API_KEY=$2 #(get_config models.openrouter.api_key)
     content="$3"
     conv_id=$4
+    conversation_mode=$5
+
     full_response=""
-    # exit
     max_retries=$(get_config max_retries)
     code="ERROR"
     # Validate JSON content
@@ -696,23 +820,28 @@ send_json_to_api() {
     
     local retry_count=0
     local http_code=1
+    retry_cond=false
+    continue_cond=false
+    # if [[ "$conversation_mode" == "stream" ]] || [[ "$continue_cond" == "true" ]] || [[ "$retry_cond" == "true" && $retry_count -lt $max_retries ]]; then
+    # fi
 
     while [ $retry_count -lt $max_retries ]; do
         spinner
-        while IFS= read -r line; do
-            parse_incoming_line "$line" #|| break
-        done < <(
-        # mkfifo myfifo  # Create a named pipe (FIFO)
-        # trap "rm -f myfifo" EXIT  # Ensure cleanup
+        (while IFS= read -r line; do
+            parse_incoming_line "$line"
+        done < <( \
         curl -sS --no-buffer -X POST "$model_endpoint" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-        -w "\nCODE: %{http_code}\n" -d "$content")  
-
+        -w "\nCODE: %{http_code}\n" -d "$content") )
+        http_code="$?"
+        
+        # echo "CODE: $http_code"
+        break
         # handle_http_code $http_code
         # return_or_retry="$?"
-        # [[ $return_or_retry -eq 2 ]] && continue
-        # return $return_or_retry
+        # [[ ! $return_or_retry -eq 2 ]] && return $return_or_retry
+        # 
     done
 }
 
@@ -722,10 +851,18 @@ send_message() {
     local conv_id="$3"
     local message_to_send="$prompt"
 
+    # if [[ -n $HISTORY_COMMANDS ]]; then
+    #     message_to_send+="\nCommand history (last $COMMAND_HISTORY_LENGTH lines): $HISTORY_COMMANDS"
+    # fi
+
+    # term_buffer=$(printf '%q' "$term_buffer")
+    # term_buffer=$(echo "$term_buffer" | sed 's/"/\"/g')
+
     if [[ -n $piped_input ]]; then
         message_to_send+="\nReference: $piped_input"
     fi
 
+    
     # Create new conversation if no ID provided
     if [ -z "$conv_id" ]; then
         # Get model and system prompt from config
@@ -743,6 +880,13 @@ send_message() {
         dynamic_prompt=$(get_config dynamic_prompt)
         dynamic_prompt=$(eval "echo \"$dynamic_prompt\"")
         system_prompt+=" $dynamic_prompt"
+
+        if [[ "$term_buffer" != "" ]]; then
+            system_prompt+="\nTerminal Buffer (last $CAPTURE_HISTORY_LENGTH lines): $term_buffer"
+        fi
+
+        system_prompt=$(echo "$system_prompt" | jq -Rs '.' | sed 's/^"//;s/"$//')
+        # message_to_send=$(echo "$message_to_send" | jq -Rs '.' | sed 's/^"//;s/"$//')
         conv_id=$(create_new_conversation "$model" "$system_prompt")
 
         debug "Getting prompt template for $model"
@@ -782,7 +926,7 @@ send_message() {
     done
 
     # Return conversation ID for future reference
-    debug "Conversation: $conv_id"
+    # debug "Conversation: $conv_id"
 }
 
 installation_required() {
@@ -988,7 +1132,15 @@ process_arguments() {
 }
 
 main() {
-    debug "Running from $0, $@"
+    term_buffer=$(get_terminal_buffer) || start_recording
+
+    #     if [ $? -eq 0 ]; then
+    # else
+    #     debug "Starting terminal recording..."
+    #     start_recording
+    # fi
+
+    debug "Running from $0"
 
     if installation_required; then
         debug "Installation is required!"
@@ -1014,7 +1166,6 @@ main() {
 
     # if user added prompt, handle it
     if [ -n "$1" ]; then
-        # handle_prompt "$@"
         send_message "$*" "$piped_input"
     elif [ -n "$piped_input" ]; then
         handle_prompt "$piped_input"

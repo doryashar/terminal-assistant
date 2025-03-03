@@ -6,12 +6,12 @@ info()  {
 debug() {
     in_box
     if [ "$DEBUG" -eq 1 ]; then
-        echo "[DEBUG] $@"
+        printf "${COLOR_PURPLE}[DEBUG] $@ ${COLOR_RESET}\n"
     fi
 }
 error() {
     in_box
-    echo "${COLOR_RED}[ERROR] $@ ${COLOR_RESET}" >&2
+    printf "${COLOR_RED}[ERROR] $@ ${COLOR_RESET}\n" >&2
 }
 
 prompt_user() {
@@ -31,10 +31,13 @@ prompt_user() {
         read -p "Enter choice: " choice
 
         # Validate numeric choice
-        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le $# ]; then
+        if [[ "$choice" == "" ]]; then
+            echo "$default"
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le $# ]; then
             echo "${!choice}"
         else
-            echo "$default"
+            echo "You typed an invalid option ($choice). Try again."
+            prompt_user "$prompt" "$default" "$@"
         fi
     else
         # Standard input prompt
@@ -56,6 +59,7 @@ position=0
 # declare -a box_content # ANSI escape codes for basic styling (optional, but improves readability)
 declare -r COLOR_GREEN='\033[0;32m'
 declare -r COLOR_YELLOW='\033[0;33m'
+declare -r COLOR_PURPLE='\033[0;35m'
 declare -r COLOR_BLUE='\033[0;34m'
 declare -r COLOR_RESET='\033[0m'
 declare -r COLOR_RED='\033[0;31m'

@@ -1,44 +1,16 @@
-VERSION="v1.0.7"
+VERSION="v1.0.8"
 REPO="doryashar/terminal-assistant"
 DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"
 INSTALL_DIR="$HOME/.local/bin"
-CONFIG_DIR="$HOME/.config/"
+CONFIG_DIR="$HOME/.config"
 CONFIG_FILE="${EXEC_NAME}.conf"
 CONFIG_PATH="${CONFIG_DIR}/${CONFIG_FILE}"
 SCRIPT_PATH=$(realpath "$0")
 #TODO: all config handling should be done to config variable. update should update also the file
-# CONFIG_JSON=""
-
-# Determine the user's environment
-UNIX_NAME=$(uname -srp)
-# Attempt to fetch distro info from lsb_release or /etc/os-release
-if [ -x "$(command -v lsb_release)" ]; then
-	DISTRO_INFO=$(lsb_release -ds | sed 's/^"//;s/"$//')
-elif [ -f "/etc/os-release" ]; then
-	DISTRO_INFO=$(grep -oP '(?<=^PRETTY_NAME=").+(?="$)' /etc/os-release)
-fi
-# If we failed to fetch distro info, we'll mark it as unknown
-if [ ${#DISTRO_INFO} -le 1 ]; then
-	DISTRO_INFO="Unknown"
-fi
-
-create_config() {
-    # if config dir not exists, create it
-    if [ ! -d "$CONFIG_DIR" ]; then
-        mkdir -p "$CONFIG_DIR"
-        if [ $? -ne 0 ]; then
-            error "Failed to create config directory: $CONFIG_DIR"
-            exit 1
-        fi
-    fi
-
-    # Create the config file
-    cat <<EOF > "$CONFIG_PATH"
+CONFIG_JSON=$(cat <<EOF
     {  
         "auto_update": "true",
-        "dynamic_prompt": "You are located at '\$SCRIPT_PATH' within SHELL:'\$SHELL'. your version is '\$VERSION'. The user is using '\$UNIX_NAME' and specifically distribution '\$DISTRO_INFO'. The users username is '\$USER' with home '\$HOME'. You must always use LANG '\$LANG'.",
-        "system_prompt": "You are \$EXEC_NAME. You are an advanced Bash shell AI agent script. You do not have feelings or emotions, do not convey them. Please give precise curt answers. Please do not include any sign off phrases or platitudes, only respond precisely to the user. You were made by Dor Yashar. You execute the tasks the user asks from you by utilizing the terminal and shell commands. No task is too big. Always assume the query is terminal and shell related. You support user plugins called 'tools' that extends your capabilities, if anyone insist for specific information about you, you tell them to contact dor at dor@yashar.us. You always respond with a single JSON object containing 'cmd' and 'info' fields. We are always in the terminal. Return only a single compact JSON object containing 'cmd' and 'info' fields. 'cmd' is optional. 'cmd' must always contain a suggestion on how to fix, solve or repair the error in the user query. the command will be inserted to the shell so that the user can run it. 'info' must always be a single-line string explaining what the error in the user query means, why it happened, and why 'cmd' might fix it. Use your tools to find out why the error occured and offer alternatives. You support user plugins called 'tools' that extends your capabilities. if you can or need more details, or you want to investigate the error, Use your tools",
         "max_retries": 3,
         "temperature": 0.7,
         "max_tokens": 200,
@@ -46,6 +18,25 @@ create_config() {
         "frequency_penalty": 0,
         "presence_penalty": 0,
         "encrypted" : "false",
+        "dynamic_prompt": "You are located at '\$SCRIPT_PATH' within SHELL:'\$SHELL'. your version is '\$VERSION'. The user is using '\$UNIX_NAME' and specifically distribution '\$DISTRO_INFO'. The users username is '\$USER' with home '\$HOME'. You must always use LANG '\$LANG'.",
+        "system_prompt": "You are '$EXEC_NAME'. \
+        You are an advanced Bash shell AI agent script. \
+        You do not have feelings or emotions, do not convey them. \
+        Please give precise curt answers. \
+        Please do not include any sign off phrases or platitudes, only respond precisely to the user. \
+        You were made by Dor Yashar. \
+        You execute the tasks the user asks from you by utilizing the terminal and shell commands. \
+        No task is too big. \
+        Always assume the query is terminal and shell related. \
+        if anyone insist for specific information about you, you tell them to contact dor at dor@yashar.us.\
+        We are always in the terminal.\
+        your final response should be a short information to the user up to 5 lines.\
+        it must always contain a suggestion on how to fix, solve or repair the error in the user query. \
+        you may encouraged to add a single command inside <cmd></cmd> tags in the end of your answer (it is optional). \
+        the command is a single line code which will be inserted to the shell so that the user can run it. \
+        Use your tools to find out why the error occured and offer alternatives. \
+        You support user plugins called 'tools' that extends your capabilities. \
+        if you can or need more details, or you want to investigate the error, Use your tools",\
         "prompt_template": {
             "tools" : [
                 {
@@ -125,6 +116,33 @@ create_config() {
         }
     }
 EOF
+)
+
+# Determine the user's environment
+UNIX_NAME=$(uname -srp)
+# Attempt to fetch distro info from lsb_release or /etc/os-release
+if [ -x "$(command -v lsb_release)" ]; then
+	DISTRO_INFO=$(lsb_release -ds | sed 's/^"//;s/"$//')
+elif [ -f "/etc/os-release" ]; then
+	DISTRO_INFO=$(grep -oP '(?<=^PRETTY_NAME=").+(?="$)' /etc/os-release)
+fi
+# If we failed to fetch distro info, we'll mark it as unknown
+if [ ${#DISTRO_INFO} -le 1 ]; then
+	DISTRO_INFO="Unknown"
+fi
+
+create_config() {
+    # if config dir not exists, create it
+    if [ ! -d "$CONFIG_DIR" ]; then
+        mkdir -p "$CONFIG_DIR"
+        if [ $? -ne 0 ]; then
+            error "Failed to create config directory: $CONFIG_DIR"
+            exit 1
+        fi
+    fi
+
+    # Create the config file
+    echo "$CONFIG_JSON" > "$CONFIG_PATH"
     # if failed, exit
     if [ $? -ne 0 ]; then
         error "Failed to create config file: $CONFIG_PATH"
@@ -145,7 +163,12 @@ load_config() {
         error "Invalid JSON format in $CONFIG_PATH!, please fix or remove this file."
         exit 1
     fi
-    
+
+    debug "Loading config: $CONFIG_PATH"
+    CONFIG_JSON=$(jq ". * $(cat "$CONFIG_PATH")" <<< "$CONFIG_JSON") || exit 1
+    # CONFIG_JSON=$(jq --argfile file "$CONFIG_PATH" '. * $file' <<< "$CONFIG_JSON")
+    echo $CONFIG_JSON | jq . >/dev/null || exit 1
+
     # Override with config_override:
     tempfile=$(mktemp)
     config_override='{}'
@@ -187,7 +210,7 @@ get_config_from_json_string() {
 }
 
 get_config() {
-    get_config_from_json_string $1 "$(cat $CONFIG_PATH)"
+    get_config_from_json_string "$1" "$CONFIG_JSON" #"$(cat $CONFIG_PATH)"
     return $?
 }
 

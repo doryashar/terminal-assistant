@@ -88,14 +88,15 @@ parse_incoming_line() {
             tool_calls=$(echo "$buffer" | jq -r '.choices[0].delta.tool_calls // empty')
             if [[ -n $tool_calls ]]; then
                 [[ -n $conv_id ]] && save_message "$conv_id" "tool" "$tool_calls"
+                echo tool_calls "${tool_calls}"
                 for tool_call in $tool_calls; do
+                    echo "" >&3
                     # local tool=$(echo "$tool_call" | jq -r '.function.name')
                     # # local id=$(echo "$tool_call" | jq -r '.id')
                     # local command=$(echo "$tool_call" | jq -r '.function.arguments.command')
                     # local reason=$(echo "$tool_call" | jq -r '.function.arguments.tool_reason')
                     # # info "Tool: $tool, Running command: $command with reason: $reason ID $id..."
                     # echo "command '$command' reason '$reason' ID '$id'" >&3
-                    echo command "${tool_call}" >&3
                 done
                 buffer=""
                 return 0
@@ -105,14 +106,20 @@ parse_incoming_line() {
                 spinner
             fi
             if [[ ! $content == "" ]]; then
-                echo in_box "${content}" >&3
-                # in_box "$content"
+                code=$(echo "$content" | sed -n 's/.*<cmd>\(.*\)<\/cmd>.*$/\1/p')
+                rest=$(echo "$content" | sed 's/<cmd>.*<\/cmd>//')
+                if [[ -n $rest ]]; then
+                    in_box "$rest"
+                fi
+                if [[ -n $code ]]; then
+                    push_to_stdin "$code"
+                fi
                 full_response+="$content"
             else
                 # Finished the response, close the box
                 echo "finished" >&3
                 [[ -n $conv_id ]] && save_message "$conv_id" "assistant" "$full_response"
-                # in_box
+                in_box
             fi
         else
             save_message "$conv_id" "system" "Error: Invalid JSON response"
@@ -129,8 +136,9 @@ send_json_to_api() {
     OPENROUTER_API_KEY=$2 #(get_config models.openrouter.api_key)
     content="$3"
     conv_id=$4
+    conversation_mode=$5
+
     full_response=""
-    # exit
     max_retries=$(get_config max_retries)
     code="ERROR"
     # Validate JSON content
@@ -141,23 +149,28 @@ send_json_to_api() {
     
     local retry_count=0
     local http_code=1
+    retry_cond=false
+    continue_cond=false
+    # if [[ "$conversation_mode" == "stream" ]] || [[ "$continue_cond" == "true" ]] || [[ "$retry_cond" == "true" && $retry_count -lt $max_retries ]]; then
+    # fi
 
     while [ $retry_count -lt $max_retries ]; do
         spinner
-        while IFS= read -r line; do
-            parse_incoming_line "$line" #|| break
-        done < <(
-        # mkfifo myfifo  # Create a named pipe (FIFO)
-        # trap "rm -f myfifo" EXIT  # Ensure cleanup
+        (while IFS= read -r line; do
+            parse_incoming_line "$line"
+        done < <( \
         curl -sS --no-buffer -X POST "$model_endpoint" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-        -w "\nCODE: %{http_code}\n" -d "$content")  
-
+        -w "\nCODE: %{http_code}\n" -d "$content") )
+        http_code="$?"
+        
+        # echo "CODE: $http_code"
+        break
         # handle_http_code $http_code
         # return_or_retry="$?"
-        # [[ $return_or_retry -eq 2 ]] && continue
-        # return $return_or_retry
+        # [[ ! $return_or_retry -eq 2 ]] && return $return_or_retry
+        # 
     done
 }
 
@@ -167,10 +180,18 @@ send_message() {
     local conv_id="$3"
     local message_to_send="$prompt"
 
+    # if [[ -n $HISTORY_COMMANDS ]]; then
+    #     message_to_send+="\nCommand history (last $COMMAND_HISTORY_LENGTH lines): $HISTORY_COMMANDS"
+    # fi
+
+    # term_buffer=$(printf '%q' "$term_buffer")
+    # term_buffer=$(echo "$term_buffer" | sed 's/"/\"/g')
+
     if [[ -n $piped_input ]]; then
         message_to_send+="\nReference: $piped_input"
     fi
 
+    
     # Create new conversation if no ID provided
     if [ -z "$conv_id" ]; then
         # Get model and system prompt from config
@@ -188,6 +209,13 @@ send_message() {
         dynamic_prompt=$(get_config dynamic_prompt)
         dynamic_prompt=$(eval "echo \"$dynamic_prompt\"")
         system_prompt+=" $dynamic_prompt"
+
+        if [[ "$term_buffer" != "" ]]; then
+            system_prompt+="\nTerminal Buffer (last $CAPTURE_HISTORY_LENGTH lines): $term_buffer"
+        fi
+
+        system_prompt=$(echo "$system_prompt" | jq -Rs '.' | sed 's/^"//;s/"$//')
+        # message_to_send=$(echo "$message_to_send" | jq -Rs '.' | sed 's/^"//;s/"$//')
         conv_id=$(create_new_conversation "$model" "$system_prompt")
 
         debug "Getting prompt template for $model"
@@ -227,5 +255,5 @@ send_message() {
     done
 
     # Return conversation ID for future reference
-    debug "Conversation: $conv_id"
+    # debug "Conversation: $conv_id"
 }
