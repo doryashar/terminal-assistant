@@ -32,7 +32,7 @@ process_arguments() {
             --update  ) 
                 if [ -n "$2" ]; then
                    UPDATE_URL="$2"
-                else
+                fi
                 do_update;;
             -v	  ) show_version;;
             -V	  ) show_version;;
