@@ -214,7 +214,7 @@ decrypt_decode() {
 
 # decrypted=$(decrypt_decode "$encrypted")
 # echo "Decrypted: $decrypted"
-VERSION="v1.0.13"
+VERSION="v1.0.14"
 REPO="doryashar/terminal-assistant"
 DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"
@@ -1125,10 +1125,16 @@ process_arguments() {
             --start  ) start_terminal_recording;;
             --stop  ) stop_terminal_recording;;
             --update  ) 
-                if [ -n "$2" ]; then
-                   UPDATE_URL="$2"
+                if update_required; then
+                    if [ -n "$2" ]; then
+                        UPDATE_URL="$2"
+                    fi
+                    do_update
+                else
+                    echo "You are up to date."
+                    exit 0
                 fi
-                do_update;;
+                ;;
             -v	  ) show_version;;
             -V	  ) show_version;;
             --version ) show_version;;
