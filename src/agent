@@ -244,8 +244,8 @@ send_message() {
             break
         elif [[ $line == 'finished' ]]; then
             in_box
-        elif [[ $line == '```bash'* ]]; then
-            push_to_stdin "${line#* }"
+        # elif [[ $line == '```bash'* ]]; then
+        #     push_to_stdin "${line#* }"
         # else
         #     # in_box
         #     echo "${line#* }"

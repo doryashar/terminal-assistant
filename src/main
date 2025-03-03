@@ -99,3 +99,8 @@ main() {
 }
 
 main "$@"
+exit 0
+
+## DO NOT MODIFY BELOW THIS LINE ##
+# shellcheck disable=SC1091
+__BINARY__

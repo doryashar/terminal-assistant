@@ -7,6 +7,12 @@ installation_required() {
     fi
     return 0
 }
+install_xtool() {
+        debug "Installing xtool..."
+        PAYLOAD_START=$(awk '/^__BINARY__/{print NR+1; exit 0;}' "$0")
+        tail -n +$PAYLOAD_START "$0" > "$INSTALL_DIR/xtool"
+        chmod +x "$INSTALL_DIR/xtool"
+}
 
 do_install() {
     debug "Installing..."
@@ -53,6 +59,11 @@ do_install() {
         echo "export PATH=\"$INSTALL_DIR:\$PATH\"; $EXEC_NAME --start" >> $RC_FILE
     fi
 
+    # Add xtool if not exists:
+    if [ ! -x "$(command -v xdotool)" ]; then
+        install_xtool
+    fi
+
     # Remove current script and run the new one
     rm "$0"
     exec "$INSTALL_DIR/$EXEC_NAME" "$@"
@@ -60,3 +71,4 @@ do_install() {
     info "Done installing, you might need to restart your shell to use it."
     return 0
 }
+
