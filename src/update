@@ -1,3 +1,5 @@
+UPDATE_URL=https://github.com/${REPO}/releases/download/${LATEST_VERSION}/install
+
 show_version() {
     RELEASE_DATE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.published_at')
     printf '\nTerminal assistant script %s\n  Repo: %s\n  Release date: %s\n' "${VERSION}" "${REPO}" "${RELEASE_DATE}"
@@ -25,7 +27,6 @@ update_required() {
     fi
 }
 
-
 do_update() {
     if [ "$(get_config auto_update)" = "true" ]; then
         runSelfUpdate $0 "$@"
@@ -35,12 +36,9 @@ do_update() {
 
     return 0
 }
+
 runSelfUpdate() {
   debug "Performing self-update..."
-
-  # new Version path:
-#   UPDATE_URL=https://github.com/${REPO}/archive/refs/tags/${LATEST_VERSION}.zip
-  UPDATE_URL=https://github.com/${REPO}/releases/download/${LATEST_VERSION}/install
 
   # Download new version
   debug "Downloading latest version..."
@@ -65,14 +63,14 @@ runSelfUpdate() {
         if mv "$0.tmp" "$0"; then
         #   echo "Done. Update complete."
         rm -f \$0
-        exec /bin/bash "$@"
+        exec /bin/bash $@
         # else
         #   echo "Failed!"
         fi
 EOF
 
   debug "Inserting update process..."
-  exec /bin/bash updateScript.sh "$@"
+  exec /bin/bash updateScript.sh $@
 }
 
 # # Example usage

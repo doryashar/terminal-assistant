@@ -182,24 +182,29 @@ spinner() {
 
 encode_encrypt() {
     local plaintext="$1"
-    local encoded
-    local encrypted
-
-    encoded=$(echo -n "$plaintext" | base64)
-    encrypted=$(echo -n "$encoded" | openssl enc -aes-256-cbc -e -base64 -K "$(echo -n "$KEY" | xxd -p)" -iv "$(echo -n "$IV" | xxd -p)")
-
-    echo "$encrypted"
+    local do_encrypt="$2"
+    local curr_value
+    #encode
+    curr_value=$(echo -n "$plaintext" | base64)
+    #encrypt
+    if [ "$do_encrypt" -eq 1 ]; then
+        curr_value=$(echo -n "$encoded" | openssl enc -aes-256-cbc -e -base64 -K "$(echo -n "$KEY" | xxd -p)" -iv "$(echo -n "$IV" | xxd -p)")
+    fi
+    echo "$curr_value"
 }
 
 decrypt_decode() {
     local encrypted="$1"
-    local decoded
-    local decrypted
+    local do_decrypt="$2"
+    local curr_value
+    #decrypt
+    if [ "$do_decrypt" -eq 1 ]; then
+        curr_value=$(echo -n "$encrypted" | openssl enc -aes-256-cbc -d -base64 -K "$(echo -n "$KEY" | xxd -p)" -iv "$(echo -n "$IV" | xxd -p)")
+    fi
+    #decode
+    curr_value=$(echo -n "$curr_value" | base64 --decode)
 
-    decrypted=$(echo -n "$encrypted" | openssl enc -aes-256-cbc -d -base64 -K "$(echo -n "$KEY" | xxd -p)" -iv "$(echo -n "$IV" | xxd -p)")
-    decoded=$(echo -n "$decrypted" | base64 --decode)
-
-    echo "$decoded"
+    echo "$curr_value"
 }
 
 # # Example Usage

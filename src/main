@@ -29,7 +29,11 @@ process_arguments() {
             --help	  ) show_usage;;
             --start  ) start_terminal_recording;;
             --stop  ) stop_terminal_recording;;
-            --update  ) do_update;;
+            --update  ) 
+                if [ -n "$2" ]; then
+                   UPDATE_URL="$2"
+                else
+                do_update;;
             -v	  ) show_version;;
             -V	  ) show_version;;
             --version ) show_version;;

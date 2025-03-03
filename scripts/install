@@ -182,24 +182,29 @@ spinner() {
 
 encode_encrypt() {
     local plaintext="$1"
-    local encoded
-    local encrypted
-
-    encoded=$(echo -n "$plaintext" | base64)
-    encrypted=$(echo -n "$encoded" | openssl enc -aes-256-cbc -e -base64 -K "$(echo -n "$KEY" | xxd -p)" -iv "$(echo -n "$IV" | xxd -p)")
-
-    echo "$encrypted"
+    local do_encrypt="$2"
+    local curr_value
+    #encode
+    curr_value=$(echo -n "$plaintext" | base64)
+    #encrypt
+    if [ "$do_encrypt" -eq 1 ]; then
+        curr_value=$(echo -n "$encoded" | openssl enc -aes-256-cbc -e -base64 -K "$(echo -n "$KEY" | xxd -p)" -iv "$(echo -n "$IV" | xxd -p)")
+    fi
+    echo "$curr_value"
 }
 
 decrypt_decode() {
     local encrypted="$1"
-    local decoded
-    local decrypted
+    local do_decrypt="$2"
+    local curr_value
+    #decrypt
+    if [ "$do_decrypt" -eq 1 ]; then
+        curr_value=$(echo -n "$encrypted" | openssl enc -aes-256-cbc -d -base64 -K "$(echo -n "$KEY" | xxd -p)" -iv "$(echo -n "$IV" | xxd -p)")
+    fi
+    #decode
+    curr_value=$(echo -n "$curr_value" | base64 --decode)
 
-    decrypted=$(echo -n "$encrypted" | openssl enc -aes-256-cbc -d -base64 -K "$(echo -n "$KEY" | xxd -p)" -iv "$(echo -n "$IV" | xxd -p)")
-    decoded=$(echo -n "$decrypted" | base64 --decode)
-
-    echo "$decoded"
+    echo "$curr_value"
 }
 
 # # Example Usage
@@ -209,7 +214,7 @@ decrypt_decode() {
 
 # decrypted=$(decrypt_decode "$encrypted")
 # echo "Decrypted: $decrypted"
-VERSION="v1.0.9"
+VERSION="v1.0.10"
 REPO="doryashar/terminal-assistant"
 DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"
@@ -1004,6 +1009,8 @@ do_install() {
 }
 
 
+UPDATE_URL=https://github.com/${REPO}/releases/download/${LATEST_VERSION}/install
+
 show_version() {
     RELEASE_DATE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.published_at')
     printf '\nTerminal assistant script %s\n  Repo: %s\n  Release date: %s\n' "${VERSION}" "${REPO}" "${RELEASE_DATE}"
@@ -1031,7 +1038,6 @@ update_required() {
     fi
 }
 
-
 do_update() {
     if [ "$(get_config auto_update)" = "true" ]; then
         runSelfUpdate $0 "$@"
@@ -1041,12 +1047,9 @@ do_update() {
 
     return 0
 }
+
 runSelfUpdate() {
   debug "Performing self-update..."
-
-  # new Version path:
-#   UPDATE_URL=https://github.com/${REPO}/archive/refs/tags/${LATEST_VERSION}.zip
-  UPDATE_URL=https://github.com/${REPO}/releases/download/${LATEST_VERSION}/install
 
   # Download new version
   debug "Downloading latest version..."
@@ -1071,14 +1074,14 @@ runSelfUpdate() {
         if mv "$0.tmp" "$0"; then
         #   echo "Done. Update complete."
         rm -f \$0
-        exec /bin/bash "$@"
+        exec /bin/bash $@
         # else
         #   echo "Failed!"
         fi
 EOF
 
   debug "Inserting update process..."
-  exec /bin/bash updateScript.sh "$@"
+  exec /bin/bash updateScript.sh $@
 }
 
 # # Example usage
@@ -1120,7 +1123,11 @@ process_arguments() {
             --help	  ) show_usage;;
             --start  ) start_terminal_recording;;
             --stop  ) stop_terminal_recording;;
-            --update  ) do_update;;
+            --update  ) 
+                if [ -n "$2" ]; then
+                   UPDATE_URL="$2"
+                else
+                do_update;;
             -v	  ) show_version;;
             -V	  ) show_version;;
             --version ) show_version;;
