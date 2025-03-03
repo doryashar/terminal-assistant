@@ -214,7 +214,7 @@ decrypt_decode() {
 
 # decrypted=$(decrypt_decode "$encrypted")
 # echo "Decrypted: $decrypted"
-VERSION="v1.0.12"
+VERSION="v1.0.13"
 REPO="doryashar/terminal-assistant"
 DEBUG=${AI_DEBUG:-0}
 EXEC_NAME="ai"
@@ -1009,7 +1009,7 @@ do_install() {
 }
 
 
-UPDATE_URL=https://github.com/${REPO}/releases/download/${LATEST_VERSION}/install
+UPDATE_URL=""
 
 show_version() {
     RELEASE_DATE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.published_at')
@@ -1021,6 +1021,7 @@ update_required() {
     # What about non-git update option?
     CURRENT_VERSION=${VERSION}
     LATEST_VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.tag_name')
+    UPDATE_URL="https://github.com/${REPO}/releases/download/${LATEST_VERSION}/install"
 
     # Check if the API returned a valid version
     if [ "$LATEST_VERSION" == "null" ] || [ -z "$LATEST_VERSION" ]; then
