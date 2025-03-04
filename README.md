@@ -10,7 +10,8 @@ Dont use it. this is not meant for anyone. the code in this repo is not safe.
 
 ### Install & Run:
 ```bash
-curl -s https://github.com/doryashar/terminal-assistant/releases/download/v1.0.3/install | bash
+curl -L https://github.com/doryashar/terminal-assistant/releases/download/v1.0.12/install | bash
+# OR grep the latest: curl -L $(curl -s "https://api.github.com/repos/doryashar/terminal-assistant/releases/latest" | ./jq-linux64 -r '.assets[0].browser_download_url') | bash
 ```
 
 ### Usage example:
